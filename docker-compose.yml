@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Remove ollama service entirely
+  
+  mcp-server:
+    build: ./mcp-server
+    container_name: crypto-mcp-server
+    ports:
+      - "8001:8001" 
+      - "8002:8002"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
+      - WEBSITE_HOST=0.0.0.0
+      - WEBSITE_PORT=8002
+      - PYTHONPATH=/app
+    volumes:
+      - ./shared:/app/shared
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  qwen-agent:
+    build: ./qwen-agent
+    container_name: crypto-qwen-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_URL=http://host.docker.internal:11434  # Point to host Ollama
+      - MCP_SERVER_URL=ws://mcp-server:8001
+      - MODEL_NAME=hf.co/unsloth/Qwen2.5-14B-Instruct-GGUF:Q4_K_M
+      - PYTHONPATH=/app
+    volumes:
+      - ./shared:/app/shared
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    networks:
+      - crypto-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allows access to host
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  crypto-network:
+    driver: bridge

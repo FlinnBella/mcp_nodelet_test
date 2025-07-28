@@ -1,0 +1,4 @@
+qwen-agent
+websockets
+asyncio
+requests
