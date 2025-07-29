@@ -15,8 +15,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy shared directory structure
-COPY --from=shared /shared ./shared/
+# Copy shared directory - FIXED: Direct copy instead of multi-stage
+COPY ../shared ./shared/
 
 # Copy application code
 COPY . .

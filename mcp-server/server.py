@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from typing import Dict, Any  # FIXED: Added missing imports
 from mcp_protocol import MCPProtocolHandler
 from trading_tools import TradingTools
 from website_connector import WebsiteConnector
@@ -21,8 +22,53 @@ class MCPTradingServer:
     
     def register_tools(self):
         """Register trading tools with MCP handler"""
-        # Same as before...
-        pass
+        # FIXED: Actually register the tools
+        
+        # Buy tool
+        self.mcp_handler.register_tool(
+            name="buy_crypto",
+            description="Execute a cryptocurrency buy order",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH)"},
+                    "amount": {"type": "number", "description": "Amount to buy"}
+                },
+                "required": ["symbol", "amount"]
+            },
+            handler=self.trading_tools.crypto_buy
+        )
+        
+        # Sell tool
+        self.mcp_handler.register_tool(
+            name="sell_crypto", 
+            description="Execute a cryptocurrency sell order",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH)"},
+                    "amount": {"type": "number", "description": "Amount to sell"}
+                },
+                "required": ["symbol", "amount"]
+            },
+            handler=self.trading_tools.crypto_sell
+        )
+        
+        # Hold tool
+        self.mcp_handler.register_tool(
+            name="hold",
+            description="Hold current position (no action)",
+            parameters={
+                "type": "object", 
+                "properties": {
+                    "reason": {"type": "string", "description": "Reason for holding"}
+                },
+                "required": []
+            },
+            handler=self.trading_tools.crypto_hold
+        )
+        
+        logger.info("Registered 3 trading tools")
     
     async def handle_market_data(self, data: Dict[str, Any]):
         """Handle market data from website and broadcast to MCP clients"""

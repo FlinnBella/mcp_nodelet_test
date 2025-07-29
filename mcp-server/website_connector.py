@@ -83,6 +83,7 @@ class WebsiteConnector:
                 "action": action,
                 "symbol": symbol,
                 "amount": amount,
+                #confidence key to add later
                 "timestamp": asyncio.get_event_loop().time()
             }
         }

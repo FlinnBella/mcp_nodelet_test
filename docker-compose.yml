@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  # Remove ollama service entirely
-  
   mcp-server:
-    build: ./mcp-server
+    build: 
+      context: .  # Use root context so Dockerfile can access ../shared
+      dockerfile: ./mcp-server/Dockerfile
     container_name: crypto-mcp-server
     ports:
       - "8001:8001" 
@@ -26,14 +26,16 @@ services:
       retries: 3
 
   qwen-agent:
-    build: ./qwen-agent
+    build: 
+      context: .  # Use root context so Dockerfile can access ../shared
+      dockerfile: ./qwen-agent/Dockerfile
     container_name: crypto-qwen-agent
     ports:
       - "8000:8000"
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434  # Point to host Ollama
       - MCP_SERVER_URL=ws://mcp-server:8001
-      - MODEL_NAME=hf.co/unsloth/Qwen2.5-14B-Instruct-GGUF:Q4_K_M
+      - MODEL_NAME=hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M
       - PYTHONPATH=/app
     volumes:
       - ./shared:/app/shared

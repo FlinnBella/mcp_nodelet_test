@@ -6,6 +6,13 @@ from website_connector import WebsiteConnector
 class TradingTools:
     def __init__(self, website_connector: WebsiteConnector):
         self.website = website_connector
+
+        # Your website's expected action names
+        self.action_mapping = {
+            "buy": "buy_crypto",
+            "sell": "sell_crypto", 
+            "hold": "hold"
+        }
     
     async def crypto_buy(self, params: Dict[str, Any]) -> str:
         """Execute a buy order"""
@@ -16,7 +23,7 @@ class TradingTools:
             raise ValueError("Missing required parameters: symbol, amount")
         
         try:
-            result = await self.website.execute_trade("buy", symbol, amount)
+            result = await self.website.execute_trade(self.action_mapping["buy"], symbol, amount)
             return f"Successfully bought {amount} {symbol}. Result: {result}"
         except Exception as e:
             raise Exception(f"Buy order failed: {str(e)}")
@@ -30,7 +37,7 @@ class TradingTools:
             raise ValueError("Missing required parameters: symbol, amount")
         
         try:
-            result = await self.website.execute_trade("sell", symbol, amount)
+            result = await self.website.execute_trade(self.action_mapping["sell"], symbol, amount)
             return f"Successfully sold {amount} {symbol}. Result: {result}"
         except Exception as e:
             raise Exception(f"Sell order failed: {str(e)}")
@@ -38,4 +45,8 @@ class TradingTools:
     async def crypto_hold(self, params: Dict[str, Any]) -> str:
         """Hold position (no action)"""
         reason = params.get("reason", "No specific reason provided")
-        return f"Holding position. Reason: {reason}"
+        try:
+            result = await self.website.execute_trade(self.action_mapping["hold"])
+            return f"Successfully held position. Reason: {reason}. Result: {result}"
+        except Exception as e:
+            raise Exception(f"Hold order failed: {str(e)}")
