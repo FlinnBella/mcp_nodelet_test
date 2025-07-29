@@ -42,7 +42,7 @@ class QwenTradingAgent:
         
         # Initialize Qwen agent
         ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
-        model_name = os.getenv("MODEL_NAME", "qwen:14b")
+        model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
         
         self.agent = Assistant(
             llm_cfg={
