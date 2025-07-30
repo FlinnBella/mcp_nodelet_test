@@ -5,13 +5,20 @@ from typing import Dict, Any
 from qwen_agent.agents import Assistant
 from mcp_client import MCPClient
 from qwen_tools import create_tools_from_mcp
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
 You are a crypto trading agent connected to trading tools via MCP protocol.
 
 You will receive real-time market data and must analyze it to make trading decisions.
 
-Available tools will be dynamically loaded from the MCP server.
+Available tools:
+- buy_crypto: Execute a buy order (requires symbol and amount)
+- sell_crypto: Execute a sell order (requires symbol and amount)
+- hold: Hold current position (optional reason parameter)
 
 Trading guidelines:
 - Only trade when you have high confidence
@@ -19,7 +26,7 @@ Trading guidelines:
 - Manage risk appropriately 
 - Provide clear reasoning for your decisions
 
-When you decide to take action, call the appropriate tool with the correct parameters.
+When you decide to take action, call the appropriate tool with the correct parameters. Always use one of the avaliable tools when making an action
 """
 
 class QwenTradingAgent:
@@ -32,7 +39,13 @@ class QwenTradingAgent:
         # Connect to MCP server
         mcp_server_url = os.getenv("MCP_SERVER_URL", "ws://mcp-server:8001")
         self.mcp_client = MCPClient(mcp_server_url)
-        await self.mcp_client.connect()
+
+        try:
+            await self.mcp_client.connect()
+            logger.info("Connected to mcp-server container")
+        except Exception as e:
+             logger.error(f"Failed to connect due to: {e}")
+             raise 
         
         # Set up market data callback
         self.mcp_client.set_market_data_callback(self.handle_market_data)
@@ -43,13 +56,15 @@ class QwenTradingAgent:
         # Initialize Qwen agent
         ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
         model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
+
+        llm_config = {
+           'model' : model_name,
+           'model_server' : f'{ollama_url}/v1',
+           'api_key' : 'EMPTY'
+        }
         
         self.agent = Assistant(
-            llm={
-                'model': model_name,
-                'model_server': f'{ollama_url}/v1',
-                'api_key' : 'EMPTY'
-            },
+            llm=llm_config,
             system_message=SYSTEM_PROMPT,
             function_list=tools
         )
@@ -106,17 +121,20 @@ If you decide to hold, use the crypto_hold tool with your reasoning.
     
     async def run(self):
         """Main agent loop"""
-        await self.initialize()
-        
-        print("Qwen Trading Agent is running...")
-        print("Waiting for market data...")
         
         # Keep the agent running
         try:
+            await self.initialize()
+
+            logger.info("QWEN_AGENT RUNNING")
+  
             while True:
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
             print("Shutting down agent...")
+        except Exception as e:
+            logger.error(f"Agent error: {e}")
+            raise
         finally:
             if self.mcp_client:
                 await self.mcp_client.disconnect()

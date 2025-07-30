@@ -20,9 +20,12 @@ while ! nc -z mcp-server 8001; do
     sleep 2
 done
 
+OLLAMA_URL=${OLLAMA_URL:-"http://ollama:11434"}
+MODEL_NAME=${MODEL_NAME:-"hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M"}
+
 # In qwen-agent/start-agent.sh
 echo "Testing connection to existing Ollama..."
-while ! curl -s http://host.docker.internal:11434/api/tags > /dev/null; do
+while ! curl -s http://ollama:11434/api/tags > /dev/null; do
     echo "Waiting for Ollama..."
     sleep 2
 done

@@ -36,7 +36,7 @@ class MCPTradingServer:
                 },
                 "required": ["symbol", "amount"]
             },
-            handler=self.trading_tools.crypto_buy
+            handler=self.trading_tools.buy_crypto
         )
         
         # Sell tool
@@ -51,7 +51,7 @@ class MCPTradingServer:
                 },
                 "required": ["symbol", "amount"]
             },
-            handler=self.trading_tools.crypto_sell
+            handler=self.trading_tools.sell_crypto
         )
         
         # Hold tool
@@ -65,7 +65,7 @@ class MCPTradingServer:
                 },
                 "required": []
             },
-            handler=self.trading_tools.crypto_hold
+            handler=self.trading_tools.hold
         )
         
         logger.info("Registered 3 trading tools")
