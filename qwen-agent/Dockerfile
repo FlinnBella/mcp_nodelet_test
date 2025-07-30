@@ -10,16 +10,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY qwen-agent/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy shared directory - FIXED: Direct copy instead of multi-stage
-COPY ../shared ./shared/
+COPY shared ./shared/
 
 # Copy application code
-COPY . .
+COPY qwen-agent/ .
 
 # Create logs directory
 RUN mkdir -p /app/logs
@@ -31,7 +31,7 @@ RUN echo 'from http.server import HTTPServer, BaseHTTPRequestHandler\nimport jso
 EXPOSE 8000
 
 # Create startup script
-COPY start-agent.sh .
+COPY qwen-agent/start-agent.sh .
 RUN chmod +x start-agent.sh
 
 # Health check

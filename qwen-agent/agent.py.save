@@ -45,13 +45,13 @@ class QwenTradingAgent:
         model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
         
         self.agent = Assistant(
-            llm={
+            llm_cfg={
                 'model': model_name,
-                'model_server': f'{ollama_url}/v1',
-                'api_key' : 'EMPTY'
+                'api_base': f'{ollama_url}/v1',
+                'model_server': 'ollama'
             },
             system_message=SYSTEM_PROMPT,
-            function_list=tools
+            tools=tools
         )
         
         print(f"Agent initialized with {len(tools)} tools")
@@ -71,35 +71,16 @@ If you decide to hold, use the crypto_hold tool with your reasoning.
 """
             
             print(f"Processing market data: {data}")
-
-            messages = [{'role': 'user', 'content': prompt}]
-
-            print("LLM RESPONSE:")
-            response_text = ""
-
             
-            for response in self.agent.run(messages):
-                print(f"Response chunk: {response}")
+            # Run agent in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                self.agent.run,
+                prompt
+            )
             
-                # Handle different response types
-                if hasattr(response, 'response'):
-                    content = response.response
-                elif hasattr(response, 'content'):
-                    content = response.content
-                elif isinstance(response, str):
-                    content = response
-                else:
-                    content = str(response)
-            
-                response_text += content
-                print(content, end="", flush=True)
-        
-            print("\n" + "=" * 50)
-            print(f"COMPLETE AGENT DECISION: {response_text}")
-            print("=" * 50)
-
-            
-           
+            print(f"Agent decision: {response}")
             
         except Exception as e:
             print(f"Error processing market data: {e}")

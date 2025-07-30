@@ -9,15 +9,17 @@ class MCPTool(BaseTool):
     """Qwen-Agent tool that calls MCP server"""
     
     def __init__(self, tool_name: str, description: str, parameters: Dict[str, Any], mcp_client: MCPClient):
-        super().__init__()
         self.name = tool_name
         self.description = description
         self.parameters = parameters
         self.mcp_client = mcp_client
+        super().__init__()
     
-    def call(self, params: dict) -> str:
+    def call(self, params: dict, **kwargs) -> str:
         """Called by Qwen-Agent when LLM decides to use this tool"""
-        
+        print(f"Tool {self.name}:")
+        print(f"   params:{params}")
+        print(f"   kwargs: {list(kwargs.keys())}")
         def run_async_tool():
             """Run the async MCP call in a new event loop"""
             try:

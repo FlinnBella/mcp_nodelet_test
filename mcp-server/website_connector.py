@@ -8,13 +8,16 @@ logger = logging.getLogger(__name__)
 
 class WebsiteConnector:
     def __init__(self, market_data_callback: Optional[Callable] = None):
+        logger.info(f"Init ran")
         self.market_data_callback = market_data_callback
         self.website_clients: Set[websockets.WebSocketServerProtocol] = set()
         self.server = None
         
-    async def handle_website_client(self, websocket, path):
+    async def handle_website_client(self, websocket):
         """Handle incoming connections from your website"""
+        logger.info(f"Add ran")
         self.website_clients.add(websocket)
+        logger.info(f"Client added")
         client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
         logger.info(f"Website client connected: {client_info}")
         
@@ -27,6 +30,7 @@ class WebsiteConnector:
             
             # Listen for messages from website
             async for message in websocket:
+                logger.info(f"Received from {client_info}: {message}")
                 await self.handle_website_message(websocket, message)
                 
         except websockets.exceptions.ConnectionClosed:
@@ -42,6 +46,7 @@ class WebsiteConnector:
             data = json.loads(message)
             message_type = data.get("type")
             
+            
             if message_type == "market_data":
                 # Market data from your website
                 market_data = data.get("data", {})
@@ -49,7 +54,11 @@ class WebsiteConnector:
                 
                 if self.market_data_callback:
                     await self.market_data_callback(market_data)
-                    
+            #fucking portfolio shit
+            elif message_type == "portfolio_update":
+                 inital_portfolio = data.get("data", {})
+                 #fucking shit 
+        
             elif message_type == "trade_confirmation":
                 # Trade execution confirmation from your website
                 confirmation = data.get("data", {})

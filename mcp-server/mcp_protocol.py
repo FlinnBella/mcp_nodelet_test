@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, List
 from websockets.server import serve
 from websockets.exceptions import ConnectionClosed
 import logging
