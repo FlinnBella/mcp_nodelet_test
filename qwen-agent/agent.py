@@ -60,7 +60,15 @@ class QwenTradingAgent:
         llm_config = {
            'model' : model_name,
            'model_server' : f'{ollama_url}/v1',
-           'api_key' : 'EMPTY'
+           'api_key' : 'EMPTY',
+           'generate_cfg': {
+           
+               'extra_body':{
+                   'chat_template_kwargs': {'enable_thinking': False}
+               },
+               'fncall_prompt_type': 'nous',
+               'thought_in_content': True,
+           }
         }
         
         self.agent = Assistant(
