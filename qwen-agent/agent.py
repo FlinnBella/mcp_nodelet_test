@@ -16,9 +16,16 @@ def get_system_prompt(difficulty: str = "medium") -> str:
     
     base_tools = """
 Available tools:
-- buy_crypto: Execute buy order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount]}
-- sell_crypto: Execute sell order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount]}  
-- hold: Hold position {"reason": "[your_reasoning]"}
+- buy_crypto: Execute buy order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount], "reason": "[detailed_reasoning]"}
+- sell_crypto: Execute sell order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount], "reason": "[detailed_reasoning]"}  
+- hold: Hold position {"reason": "[detailed_reasoning]"}
+
+CRITICAL RISK RULES:
+- ONLY trade if portfolio.riskMetrics.canTrade = true
+- Respect availableBuyingPower for buy orders
+- Check tradesRemainingToday and tradesRemainingThisHour limits
+- Consider riskScore, consecutiveLosses, and maxDrawdownToday
+- Never exceed position limits or risk thresholds
 
 You MUST call exactly ONE tool for every market update.
 """
@@ -30,14 +37,16 @@ You are a SIMPLE crypto trading bot. Make quick, basic decisions.
 SIMPLE RULES:
 - Buy when prices drop
 - Sell when prices rise  
-- Use risk metrics: only trade if canTrade is true
-- Trade 5-15% of available cash per trade
+- ONLY trade if portfolio.riskMetrics.canTrade = true
+- Trade 5-15% of availableBuyingPower per trade
+- Check tradesRemainingToday and tradesRemainingThisHour
 - If unsure, just hold
 
 BASIC STRATEGY:
 - Price going up = sell if you own it
 - Price going down = buy with some cash
 - Don't overthink it - just trade!
+- Always provide detailed reasoning in the reason field
 
 {base_tools}
 
@@ -67,6 +76,7 @@ EXPERT RISK MANAGEMENT:
 - Position size inversely proportional to recent losses and portfolio heat
 - Consider market correlation during portfolio construction
 - Execute tactical rebalancing based on changing market conditions
+- ALWAYS check portfolio.riskMetrics.canTrade before any action
 
 {base_tools}
 
@@ -80,11 +90,11 @@ You are a BALANCED crypto trading agent with market analysis skills.
 TRADING APPROACH:
 - Analyze market data AND risk metrics before trading
 - Consider portfolio balance, risk score, and trading limits  
-- Use 8-25% of available cash for trades based on confidence
-- Respect risk constraints: check canTrade, tradesRemaining, consecutiveLosses
+- Use 8-25% of availableBuyingPower for trades based on confidence
+- Respect risk constraints: check portfolio.riskMetrics.canTrade, tradesRemaining, consecutiveLosses
 
 DECISION PROCESS:
-1. Check if trading is allowed (canTrade = true)
+1. Check if trading is allowed (portfolio.riskMetrics.canTrade = true)
 2. Analyze current prices vs portfolio holdings
 3. Consider risk metrics and daily/hourly trade limits
 4. Make calculated buy/sell decisions
@@ -95,6 +105,7 @@ RISK AWARENESS:
 - Reduce position sizes after losses
 - Increase position sizes during profitable streaks
 - Balance portfolio across BTC, ETH, SOL, DOGE
+- Always provide detailed reasoning in the reason field
 
 {base_tools}
 
@@ -147,7 +158,7 @@ class QwenTradingAgent:
         self.agent = Assistant(
             llm=llm_config,
             system_message=SYSTEM_PROMPT,
-            function_list=tools
+            tools=tools
         )
         
         print(f"Agent initialized with {len(tools)} tools")
@@ -194,19 +205,31 @@ class QwenTradingAgent:
             logger.info(f"DEBUG: Processing with difficulty '{difficulty}': {data}")
             # Get difficulty-specific configuration
             llm_config = self.get_difficulty_config(difficulty)
+            tools = create_tools_from_mcp(self.mcp_client)
             
             # Create dynamic agent for this difficulty level
             dynamic_agent = Assistant(
                 llm=llm_config,
                 system_message=get_system_prompt(difficulty),
-                function_list=self.agent.function_list  # Reuse existing tools
+                tools=tools
             )
             
             prompt = f"""
 Market Data Analysis:
 {json.dumps(data, indent=2)}
 
-Execute your trading decision now.
+CRITICAL RISK CONTEXT:
+- Portfolio Value: ${data.get('portfolio', {}).get('totalValue', 0):,.2f}
+- Daily Change: {data.get('portfolio', {}).get('dailyChangePercent', 0):.2f}%
+- Available Buying Power: ${data.get('portfolio', {}).get('availableBuyingPower', 0):,.2f}
+- Risk Score: {data.get('portfolio', {}).get('riskMetrics', {}).get('riskScore', 0)}/100
+- Can Trade: {data.get('portfolio', {}).get('riskMetrics', {}).get('canTrade', False)}
+- Trades Remaining Today: {data.get('portfolio', {}).get('riskMetrics', {}).get('tradesRemainingToday', 0)}
+- Trades Remaining This Hour: {data.get('portfolio', {}).get('riskMetrics', {}).get('tradesRemainingThisHour', 0)}
+- Consecutive Losses: {data.get('portfolio', {}).get('riskMetrics', {}).get('consecutiveLosses', 0)}
+- Max Drawdown Today: {data.get('portfolio', {}).get('riskMetrics', {}).get('maxDrawdownToday', 0):.2f}%
+
+Execute your trading decision now. Remember to check portfolio.riskMetrics.canTrade before any action.
 """
             
             logger.info(f"DEBUG: Processing market data with difficulty '{difficulty}': {data}")

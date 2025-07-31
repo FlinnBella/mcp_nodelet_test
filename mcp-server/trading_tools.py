@@ -18,13 +18,17 @@ class TradingTools:
         """Execute a buy order"""
         symbol = params.get("symbol")
         amount = params.get("amount")
+        reason = params.get("reason", "No reason provided")
         
         if not symbol or not amount:
             raise ValueError("Missing required parameters: symbol, amount")
         
+        if not reason:
+            raise ValueError("Missing required parameter: reason")
+        
         try:
             result = await self.website.execute_trade(self.action_mapping["buy"], symbol, amount)
-            return f"Successfully bought {amount} {symbol}. Result: {result}"
+            return f"Successfully bought {amount} USD of {symbol}. Reason: {reason}. Result: {result}"
         except Exception as e:
             raise Exception(f"Buy order failed: {str(e)}")
     
@@ -32,19 +36,27 @@ class TradingTools:
         """Execute a sell order"""
         symbol = params.get("symbol")
         amount = params.get("amount")
+        reason = params.get("reason", "No reason provided")
         
         if not symbol or not amount:
             raise ValueError("Missing required parameters: symbol, amount")
         
+        if not reason:
+            raise ValueError("Missing required parameter: reason")
+        
         try:
             result = await self.website.execute_trade(self.action_mapping["sell"], symbol, amount)
-            return f"Successfully sold {amount} {symbol}. Result: {result}"
+            return f"Successfully sold {amount} USD of {symbol}. Reason: {reason}. Result: {result}"
         except Exception as e:
             raise Exception(f"Sell order failed: {str(e)}")
     
     async def hold(self, params: Dict[str, Any]) -> str:
         """Hold position (no action)"""
-        reason = params.get("reason", "No specific reason provided")
+        reason = params.get("reason")
+        
+        if not reason:
+            raise ValueError("Missing required parameter: reason")
+        
         try:
             result = await self.website.execute_trade(self.action_mapping["hold"], None, None)
             return f"Successfully held position. Reason: {reason}. Result: {result}"

@@ -30,14 +30,15 @@ class MCPTradingServer:
         # Buy tool
         self.mcp_handler.register_tool(
             name="buy_crypto",
-            description="Execute a cryptocurrency buy order",
+            description="Execute a cryptocurrency buy order. Consider risk metrics: only trade if canTrade=true, respect availableBuyingPower, and check tradesRemaining limits.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH)"},
-                    "amount": {"type": "number", "description": "Amount to buy"}
+                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH, SOL, DOGE)"},
+                    "amount": {"type": "number", "description": "Amount to buy in USD"},
+                    "reason": {"type": "string", "description": "Reasoning for the buy decision"}
                 },
-                "required": ["symbol", "amount"]
+                "required": ["symbol", "amount", "reason"]
             },
             handler=self.trading_tools.buy_crypto
         )
@@ -45,14 +46,15 @@ class MCPTradingServer:
         # Sell tool
         self.mcp_handler.register_tool(
             name="sell_crypto", 
-            description="Execute a cryptocurrency sell order",
+            description="Execute a cryptocurrency sell order. Consider risk metrics: only trade if canTrade=true and check tradesRemaining limits.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH)"},
-                    "amount": {"type": "number", "description": "Amount to sell"}
+                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH, SOL, DOGE)"},
+                    "amount": {"type": "number", "description": "Amount to sell in USD"},
+                    "reason": {"type": "string", "description": "Reasoning for the sell decision"}
                 },
-                "required": ["symbol", "amount"]
+                "required": ["symbol", "amount", "reason"]
             },
             handler=self.trading_tools.sell_crypto
         )
@@ -60,13 +62,13 @@ class MCPTradingServer:
         # Hold tool
         self.mcp_handler.register_tool(
             name="hold",
-            description="Hold current position (no action)",
+            description="Hold current position (no action). Use when risk metrics indicate trading should be avoided or when market conditions are uncertain.",
             inputSchema={
                 "type": "object", 
                 "properties": {
-                    "reason": {"type": "string", "description": "Reason for holding"}
+                    "reason": {"type": "string", "description": "Detailed reasoning for holding position"}
                 },
-                "required": []
+                "required": ["reason"]
             },
             handler=self.trading_tools.hold
         )
