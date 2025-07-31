@@ -132,6 +132,9 @@ If you decide to hold, use the crypto_hold tool with your reasoning.
   
             while True:
                 await asyncio.sleep(1)
+                # Check connection status every 30 seconds
+                if asyncio.get_event_loop().time() % 30 < 1:
+                    logger.info(f"DEBUG: MCP client connected: {self.mcp_client.connected if self.mcp_client else False}")
         except KeyboardInterrupt:
             print("Shutting down agent...")
         except Exception as e:

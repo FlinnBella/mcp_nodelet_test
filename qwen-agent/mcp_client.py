@@ -57,10 +57,10 @@ class MCPClient:
             async for message in self.websocket:
                 await self.process_message(message)
         except websockets.exceptions.ConnectionClosed:
-            logger.info("MCP server connection closed")
+            logger.error("DEBUG: MCP server connection closed unexpectedly!")
             self.connected = False
         except Exception as e:
-            logger.error(f"Error in message handler: {e}")
+            logger.error(f"DEBUG: Error in message handler: {e}")
             self.connected = False
     
     async def process_message(self, message: str):
