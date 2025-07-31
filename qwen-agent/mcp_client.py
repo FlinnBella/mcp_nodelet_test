@@ -157,11 +157,15 @@ class MCPClient:
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Call a tool on the MCP server"""
+        logger.info(f"DEBUG: ===== MCP CLIENT TOOL CALL =====")
+        logger.info(f"DEBUG: Calling tool '{tool_name}' with arguments: {arguments}")
+        
         result = await self.send_request("tools/call", {
             "name": tool_name,
             "arguments": arguments
         })
         
+        logger.info(f"DEBUG: MCP server returned result: {result}")
         return result.get("content", "")
     
     def set_market_data_callback(self, callback: callable):

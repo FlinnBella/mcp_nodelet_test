@@ -20,6 +20,9 @@ class MCPTool(BaseTool):
     
     def call(self, params: dict, **kwargs) -> str:
         """Called by Qwen-Agent when LLM decides to use this tool"""
+        logger.info(f"DEBUG: ===== TOOL CALL STARTED =====")
+        logger.info(f"DEBUG: Tool {self.name} called with params: {params}")
+        logger.info(f"DEBUG: Tool {self.name} kwargs: {list(kwargs.keys())}")
         print(f"Tool {self.name}:")
         print(f"   params:{params}")
         print(f"   kwargs: {list(kwargs.keys())}")

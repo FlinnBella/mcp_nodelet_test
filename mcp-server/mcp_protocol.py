@@ -124,14 +124,21 @@ class MCPProtocolHandler:
             tool_name = request.params.get("name")
             arguments = request.params.get("arguments", {})
             
+            logger.info(f"DEBUG: ===== MCP SERVER TOOL CALL =====")
+            logger.info(f"DEBUG: MCP server received tool call: {tool_name}")
+            logger.info(f"DEBUG: Tool arguments: {arguments}")
+            
             if tool_name not in self.tools:
+                logger.error(f"DEBUG: Tool '{tool_name}' not found in available tools: {list(self.tools.keys())}")
                 return MCPResponse(
                     id=request.id,
                     error={"code": -32601, "message": f"Tool not found: {tool_name}"}
                 )
             
             try:
+                logger.info(f"DEBUG: Executing tool '{tool_name}' with handler: {self.tools[tool_name]}")
                 result = await self.tools[tool_name](arguments)
+                logger.info(f"DEBUG: Tool '{tool_name}' execution result: {result}")
                 # Proper MCP tool response format
                 return MCPResponse(
                     id=request.id,

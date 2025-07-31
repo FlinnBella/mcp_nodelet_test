@@ -112,14 +112,22 @@ Do NOT provide explanations. Call a tool immediately.
             
             logger.info(f"DEBUG: Agent.run loop completed, final_response: {final_response}")
             if final_response:
-                # Check if response contains tool calls
-                response_text = str(final_response)
-                if any(tool_name in response_text.lower() for tool_name in ['buy_crypto', 'sell_crypto', 'hold']):
-                    logger.info(f"DEBUG: Tool call detected in response")
+                # Check if response contains function_call
+                has_function_call = False
+                if isinstance(final_response, list):
+                    for msg in final_response:
+                        if isinstance(msg, dict) and 'function_call' in msg:
+                            has_function_call = True
+                            logger.info(f"DEBUG: ===== FUNCTION CALL DETECTED =====")
+                            logger.info(f"DEBUG: Function call: {msg['function_call']}")
+                            break
+                
+                if has_function_call:
+                    logger.info(f"DEBUG: Tool execution should have completed")
                     print(f"Agent decision: {final_response}")
                     await self.send_agent_response_to_website(final_response)
                 else:
-                    logger.warning(f"DEBUG: No tool call detected, forcing hold action")
+                    logger.warning(f"DEBUG: No function call detected in response")
                     # Force a hold action if no tool was called
                     fallback_response = "Agent failed to call tool, defaulting to hold position"
                     print(f"Agent decision (fallback): {fallback_response}")
