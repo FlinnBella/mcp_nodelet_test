@@ -28,8 +28,8 @@ RUN mkdir -p /app/logs
 EXPOSE 8001 8002
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD nc -z localhost 8001 || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python health_check.py || exit 1
 
 # Run the application
 CMD ["python", "server.py"]

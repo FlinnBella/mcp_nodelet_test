@@ -31,7 +31,7 @@ class MCPTradingServer:
         self.mcp_handler.register_tool(
             name="buy_crypto",
             description="Execute a cryptocurrency buy order",
-            parameters={
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH)"},
@@ -46,7 +46,7 @@ class MCPTradingServer:
         self.mcp_handler.register_tool(
             name="sell_crypto", 
             description="Execute a cryptocurrency sell order",
-            parameters={
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH)"},
@@ -61,7 +61,7 @@ class MCPTradingServer:
         self.mcp_handler.register_tool(
             name="hold",
             description="Hold current position (no action)",
-            parameters={
+            inputSchema={
                 "type": "object", 
                 "properties": {
                     "reason": {"type": "string", "description": "Reason for holding"}

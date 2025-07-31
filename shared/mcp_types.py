@@ -24,7 +24,7 @@ class MCPResponse:
 class MCPTool:
     name: str
     description: str
-    parameters: Dict[str, Any]
+    inputSchema: Dict[str, Any]
 
 @dataclass
 class MCPCapabilities:

@@ -17,9 +17,9 @@ class MCPProtocolHandler:
         self.clients = set()
         self.agent_response_callback: Optional[Callable] = None
         
-    def register_tool(self, name: str, description: str, parameters: Dict[str, Any], handler: Callable):
+    def register_tool(self, name: str, description: str, inputSchema: Dict[str, Any], handler: Callable):
         """Register a tool with the MCP server"""
-        tool = MCPTool(name=name, description=description, parameters=parameters)
+        tool = MCPTool(name=name, description=description, inputSchema=parameters)
         self.tool_definitions.append(tool)
         self.tools[name] = handler
         logger.info(f"Registered tool: {name}")
