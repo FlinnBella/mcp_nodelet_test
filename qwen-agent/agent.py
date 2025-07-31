@@ -173,6 +173,7 @@ class QwenTradingAgent:
             'model': model_name,
             'model_server': f'{ollama_url}/v1',
             'api_key': 'EMPTY',
+            'fn_call_prompt_type': 'openai',
         }
         
         if difficulty == "easy":
@@ -195,6 +196,7 @@ class QwenTradingAgent:
                 'max_tokens': 250,     # Moderate analysis
                 'top_p': 0.2,         # Balanced creativity
                 'thought_in_content' : False,
+                
             }
         
         return base_config
