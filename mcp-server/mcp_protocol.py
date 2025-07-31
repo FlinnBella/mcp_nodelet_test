@@ -31,17 +31,18 @@ class MCPProtocolHandler:
     async def handle_client(self, websocket, path):
         """Handle MCP client connections"""
         self.clients.add(websocket)
-        logger.info(f"New MCP client connected: {websocket.remote_address}")
+        logger.info(f"DEBUG: New MCP client connected: {websocket.remote_address}, total clients: {len(self.clients)}")
         
         try:
             async for message in websocket:
                 await self.process_message(websocket, message)
         except ConnectionClosed:
-            logger.info(f"MCP client disconnected: {websocket.remote_address}")
+            logger.info(f"DEBUG: MCP client disconnected: {websocket.remote_address}, remaining clients: {len(self.clients)-1}")
         except Exception as e:
             logger.error(f"Error handling client: {e}")
         finally:
             self.clients.discard(websocket)
+            logger.info(f"DEBUG: Client cleanup complete, remaining clients: {len(self.clients)}")
     
     async def process_message(self, websocket, message: str):
         """Process incoming MCP messages"""
@@ -184,6 +185,7 @@ class MCPProtocolHandler:
     
     async def broadcast_notification(self, method: str, params: Dict[str, Any]):
         """Send MCP notifications over WebSocket to all connected clients"""
+        logger.info(f"DEBUG: Broadcasting {method} to {len(self.clients)} clients")
         # MCP notification format (no id field for notifications)
         notification = {
             "jsonrpc": "2.0",
@@ -191,11 +193,14 @@ class MCPProtocolHandler:
             "params": params
         }
         message = json.dumps(notification)
+        logger.info(f"DEBUG: Notification message: {message}")
         
         for client in self.clients.copy():
             try:
                 await client.send(message)
+                logger.info(f"DEBUG: Sent to client {client.remote_address}")
             except ConnectionClosed:
+                logger.info(f"DEBUG: Client {client.remote_address} disconnected")
                 self.clients.discard(client)
     
     async def start_server(self, host: str = "0.0.0.0", port: int = 8001):

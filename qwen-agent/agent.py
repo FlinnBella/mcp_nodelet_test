@@ -49,6 +49,7 @@ class QwenTradingAgent:
         
         # Set up market data callback
         self.mcp_client.set_market_data_callback(self.handle_market_data)
+        logger.info("DEBUG: Market data callback registered")
         
         # Create tools from MCP server capabilities
         tools = create_tools_from_mcp(self.mcp_client)
@@ -81,6 +82,7 @@ class QwenTradingAgent:
     
     async def handle_market_data(self, data: Dict[str, Any]):
         """Handle market data from MCP server"""
+        logger.info("DEBUG: handle_market_data called!")
         try:
             prompt = f"""
 New market data received:

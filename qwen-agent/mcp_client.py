@@ -66,6 +66,7 @@ class MCPClient:
     async def process_message(self, message: str):
         """Process incoming MCP messages"""
         try:
+            logger.info(f"DEBUG: Received message: {message}")
             data = json.loads(message)
             
             # Handle responses to our requests
@@ -75,6 +76,7 @@ class MCPClient:
                     future.set_exception(Exception(data["error"]["message"]))
                 else:
                     future.set_result(data.get("result"))
+            logger.info(f"DEBUG: Checking method: {data.get('method')}")
             
             # Handle notifications (like market data)
             elif "method" in data:
