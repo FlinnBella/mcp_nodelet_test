@@ -2,8 +2,10 @@ from qwen_agent.tools import BaseTool
 from typing import Dict, Any
 from mcp_client import MCPClient
 import asyncio
-import threading
-import time
+import concurrent.futures
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MCPTool(BaseTool):
     """Qwen-Agent tool that calls MCP server"""
@@ -106,13 +108,22 @@ def create_tools_from_mcp(mcp_client: MCPClient) -> list:
     """Create Qwen-Agent tools from MCP server capabilities"""
     tools = []
     
-    for mcp_tool in mcp_client.tools:
-        qwen_tool = MCPTool(
-            tool_name=mcp_tool.name,
-            description=mcp_tool.description,
-            parameters=mcp_tool.parameters,
-            mcp_client=mcp_client
-        )
-        tools.append(qwen_tool)
+    if not mcp_client.tools:
+        logger.warning("⚠️ No tools available from MCP server")
+        return tools
     
+    for mcp_tool in mcp_client.tools:
+        try:
+            qwen_tool = MCPTool(
+                tool_name=mcp_tool.name,
+                description=mcp_tool.description,
+                parameters=mcp_tool.parameters,
+                mcp_client=mcp_client
+            )
+            tools.append(qwen_tool)
+            logger.info(f"✅ Created tool: {mcp_tool.name}")
+        except Exception as e:
+            logger.error(f"❌ Failed to create tool {mcp_tool.name}: {e}")
+    
+    logger.info(f"🔧 Created {len(tools)} tools total")
     return tools
