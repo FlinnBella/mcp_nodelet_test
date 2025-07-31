@@ -76,10 +76,10 @@ class MCPClient:
                     future.set_exception(Exception(data["error"]["message"]))
                 else:
                     future.set_result(data.get("result"))
-            logger.info(f"DEBUG: Checking method: {data.get('method')}")
             
             # Handle notifications (like market data)
             elif "method" in data:
+                logger.info(f"DEBUG: Checking method: {data.get('method')}")
                 if data["method"] == "market_data" and self.market_data_callback:
                     await self.market_data_callback(data["params"])
             
