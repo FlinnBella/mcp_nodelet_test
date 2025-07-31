@@ -63,12 +63,9 @@ class QwenTradingAgent:
            'model_server' : f'{ollama_url}/v1',
            'api_key' : 'EMPTY',
            'generate_cfg': {
-           
-               'extra_body':{
-                   'chat_template_kwargs': {'enable_thinking': False}
-               },
                'fncall_prompt_type': 'nous',
-               'thought_in_content': True,
+               'thought_in_content': False,  # Changed: Disable thinking mode
+               'use_raw_api': True,  # Added: Use native tool calling
            }
         }
         
