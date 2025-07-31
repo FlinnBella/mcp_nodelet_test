@@ -74,35 +74,27 @@ If you decide to hold, use the crypto_hold tool with your reasoning.
 
             messages = [{'role': 'user', 'content': prompt}]
 
-            print("LLM RESPONSE:")
-            response_text = ""
-
+            print("Processing market data with agent...")
             
-            for response in self.agent.run(messages):
-                print(f"Response chunk: {response}")
+            # Process agent response using documented pattern
+            final_response = None
+            for response_chunk in self.agent.run(messages=messages):
+                final_response = response_chunk  # Last iteration contains final response
             
-                # Handle different response types
-                if hasattr(response, 'response'):
-                    content = response.response
-                elif hasattr(response, 'content'):
-                    content = response.content
-                elif isinstance(response, str):
-                    content = response
-                else:
-                    content = str(response)
-            
-                response_text += content
-                print(content, end="", flush=True)
-        
-            print("\n" + "=" * 50)
-            print(f"COMPLETE AGENT DECISION: {response_text}")
-            print("=" * 50)
+            if final_response:
+                print(f"Agent decision: {final_response}")
+                # Send agent response back to website via MCP server
+                await self.send_agent_response_to_website(final_response)
+            else:
+                print("No response from agent")
 
             
            
             
         except Exception as e:
             print(f"Error processing market data: {e}")
+            # Send error notification back to website
+            await self.send_agent_response_to_website(f"Error: {str(e)}")
     
     async def run(self):
         """Main agent loop"""
@@ -120,3 +112,15 @@ If you decide to hold, use the crypto_hold tool with your reasoning.
         finally:
             if self.mcp_client:
                 await self.mcp_client.disconnect()
+    
+    async def send_agent_response_to_website(self, response):
+        """Send agent decision/response back to website via MCP server"""
+        try:
+            if self.mcp_client and self.mcp_client.connected:
+                await self.mcp_client.send_request("agent_response", {
+                    "response": str(response),
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+                print(f"Sent agent response to MCP server")
+        except Exception as e:
+            print(f"Failed to send agent response to website: {e}")

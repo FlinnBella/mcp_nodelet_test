@@ -22,21 +22,32 @@ class MCPTool(BaseTool):
         print(f"   kwargs: {list(kwargs.keys())}")
         def run_async_tool():
             """Run the async MCP call in a new event loop"""
+            loop = None
             try:
                 # Create new event loop for this thread
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-                # Run the MCP call
+                # Run the MCP call with timeout
                 result = loop.run_until_complete(
-                    self.mcp_client.call_tool(self.name, params)
+                    asyncio.wait_for(
+                        self.mcp_client.call_tool(self.name, params),
+                        timeout=25.0  # 25s timeout, less than thread timeout
+                    )
                 )
                 
-                loop.close()
                 return result
                 
+            except asyncio.TimeoutError:
+                return f"MCP tool {self.name} timed out after 25 seconds"
             except Exception as e:
                 return f"Error calling MCP tool {self.name}: {str(e)}"
+            finally:
+                if loop and not loop.is_closed():
+                    try:
+                        loop.close()
+                    except Exception:
+                        pass  # Ignore cleanup errors
         
         try:
             # FIXED: Use threading instead of asyncio.run_coroutine_threadsafe
@@ -55,26 +66,39 @@ class MCPTool(BaseTool):
                     except Exception as e:
                         exception_container['error'] = e
                 
-                thread = threading.Thread(target=thread_target)
+                thread = threading.Thread(target=thread_target, daemon=True)
                 thread.start()
                 thread.join(timeout=30)  # 30 second timeout
                 
                 if thread.is_alive():
-                    return f"MCP tool {self.name} timed out"
+                    print(f"Warning: MCP tool {self.name} thread still running after timeout")
+                    return f"MCP tool {self.name} timed out after 30 seconds"
                 
                 if 'error' in exception_container:
-                    raise exception_container['error']
+                    error = exception_container['error']
+                    print(f"MCP tool {self.name} error: {error}")
+                    return f"Error in MCP tool {self.name}: {str(error)}"
                 
-                return result_container.get('result', f"No result from MCP tool {self.name}")
+                result = result_container.get('result')
+                if result is None:
+                    return f"No result from MCP tool {self.name}"
+                
+                return result
                 
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run
-                return asyncio.run(
-                    self.mcp_client.call_tool(self.name, params)
-                )
+                try:
+                    return asyncio.run(
+                        asyncio.wait_for(
+                            self.mcp_client.call_tool(self.name, params),
+                            timeout=30.0
+                        )
+                    )
+                except asyncio.TimeoutError:
+                    return f"MCP tool {self.name} timed out after 30 seconds"
             
         except Exception as e:
-            error_msg = f"Error calling MCP tool {self.name}: {str(e)}"
+            error_msg = f"Unexpected error in MCP tool {self.name}: {str(e)}"
             print(error_msg)
             return error_msg
 

@@ -19,6 +19,9 @@ class MCPTradingServer:
         
         # Register tools with MCP protocol
         self.register_tools()
+        
+        # Set up agent response callback
+        self.mcp_handler.set_agent_response_callback(self.handle_agent_response)
     
     def register_tools(self):
         """Register trading tools with MCP handler"""
@@ -72,9 +75,21 @@ class MCPTradingServer:
     
     async def handle_market_data(self, data: Dict[str, Any]):
         """Handle market data from website and broadcast to MCP clients"""
+        logger.info(f"Broadcasting market data to MCP clients: {data}")
         await self.mcp_handler.broadcast_notification(
             method="market_data",
-            params=data
+            params={
+                "type": "market_data",
+                "data": data
+            }
+        )
+    
+    async def handle_agent_response(self, response_data: str):
+        """Handle agent response and broadcast to website clients"""
+        logger.info(f"Forwarding agent response to website clients: {response_data}")
+        await self.website_connector.broadcast_message(
+            message_type="agent_decision",
+            data={"decision": response_data}
         )
     
     async def start(self):

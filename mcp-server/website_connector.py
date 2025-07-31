@@ -15,36 +15,61 @@ class WebsiteConnector:
         
     async def handle_website_client(self, websocket):
         """Handle incoming connections from your website"""
-        logger.info(f"Add ran")
-        self.website_clients.add(websocket)
-        logger.info(f"Client added")
         client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        logger.info(f"Website client connected: {client_info}")
+        
+        try:
+            self.website_clients.add(websocket)
+            logger.info(f"Website client connected: {client_info}")
+        except Exception as e:
+            logger.error(f"Failed to add client {client_info}: {e}")
+            return
         
         try:
             # Send welcome message
-            await websocket.send(json.dumps({
+            welcome_msg = {
                 "type": "connection_established",
                 "message": "Connected to MCP Trading Server"
-            }))
+            }
+            await websocket.send(json.dumps(welcome_msg))
             
             # Listen for messages from website
             async for message in websocket:
-                logger.info(f"Received from {client_info}: {message}")
                 await self.handle_website_message(websocket, message)
                 
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Website client disconnected: {client_info}")
+        except websockets.exceptions.WebSocketException as e:
+            logger.warning(f"WebSocket error for {client_info}: {e}")
         except Exception as e:
-            logger.error(f"Error handling website client {client_info}: {e}")
+            logger.error(f"Unexpected error handling client {client_info}: {e}")
         finally:
             self.website_clients.discard(websocket)
     
     async def handle_website_message(self, websocket, message: str):
         """Process messages from your website"""
+        client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
+        
         try:
+            if not message or len(message) > 1024 * 1024:  # 1MB limit
+                logger.warning(f"Invalid message size from {client_info}: {len(message)} bytes")
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": "Invalid message size"
+                }))
+                return
+            
             data = json.loads(message)
             message_type = data.get("type")
+            
+            if not message_type:
+                logger.warning(f"Missing 'type' field from {client_info}")
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": "Message must include 'type' field"
+                }))
+                return
+                
+            logger.debug(f"Processing {message_type} from {client_info}")
             
             
             if message_type == "market_data":
@@ -72,19 +97,32 @@ class WebsiteConnector:
             else:
                 logger.warning(f"Unknown message type: {message_type}")
                 
-        except json.JSONDecodeError:
-            logger.error("Received invalid JSON from website")
-            await websocket.send(json.dumps({
-                "type": "error",
-                "message": "Invalid JSON format"
-            }))
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON from {client_info}: {str(e)[:100]}")
+            try:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": "Invalid JSON format"
+                }))
+            except Exception:
+                pass  # Client likely disconnected
         except Exception as e:
-            logger.error(f"Error processing website message: {e}")
+            logger.error(f"Error processing message from {client_info}: {e}")
+            try:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": "Server error processing message"
+                }))
+            except Exception:
+                pass  # Client likely disconnected
     
     async def execute_trade(self, action: str, symbol: str, amount: float) -> Dict[str, Any]:
         """Send trade command to all connected websites"""
         if not self.website_clients:
+            logger.warning("No website clients connected for trade execution")
             raise Exception("No website clients connected")
+            
+        logger.info(f"Executing trade: {action} {amount} {symbol}")
         
         command = {
             "type": "trade_command",
@@ -101,13 +139,13 @@ class WebsiteConnector:
         for client in self.website_clients.copy():
             try:
                 await client.send(json.dumps(command))
-                logger.info(f"Sent trade command to {client.remote_address}: {command}")
+                logger.debug(f"Sent trade command to {client.remote_address}")
                 results.append({"client": str(client.remote_address), "status": "sent"})
             except websockets.exceptions.ConnectionClosed:
                 self.website_clients.discard(client)
-                logger.warning(f"Removed disconnected client: {client.remote_address}")
+                logger.info(f"Removed disconnected client: {client.remote_address}")
             except Exception as e:
-                logger.error(f"Failed to send to {client.remote_address}: {e}")
+                logger.error(f"Failed to send trade to {client.remote_address}: {e}")
                 results.append({"client": str(client.remote_address), "status": "failed", "error": str(e)})
         
         return {"results": results, "command": command["data"]}
@@ -125,7 +163,7 @@ class WebsiteConnector:
             except websockets.exceptions.ConnectionClosed:
                 self.website_clients.discard(client)
             except Exception as e:
-                logger.error(f"Broadcast failed to {client.remote_address}: {e}")
+                logger.warning(f"Broadcast failed to {client.remote_address}: {e}")
     
     async def start_server(self, host: str = "0.0.0.0", port: int = 8002):
         """Start WebSocket server for website connections"""
