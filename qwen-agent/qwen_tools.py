@@ -3,6 +3,7 @@ from typing import Dict, Any
 from mcp_client import MCPClient
 import asyncio
 import concurrent.futures
+import threading
 import logging
 
 logger = logging.getLogger(__name__)

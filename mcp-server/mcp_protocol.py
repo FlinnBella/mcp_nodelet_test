@@ -19,7 +19,7 @@ class MCPProtocolHandler:
         
     def register_tool(self, name: str, description: str, inputSchema: Dict[str, Any], handler: Callable):
         """Register a tool with the MCP server"""
-        tool = MCPTool(name=name, description=description, inputSchema=parameters)
+        tool = MCPTool(name=name, description=description, inputSchema=inputSchema)
         self.tool_definitions.append(tool)
         self.tools[name] = handler
         logger.info(f"Registered tool: {name}")
@@ -113,7 +113,7 @@ class MCPProtocolHandler:
                         {
                             "name": tool.name,
                             "description": tool.description,
-                            "inputSchema": tool.parameters
+                            "inputSchema": tool.inputSchema
                         } for tool in self.tool_definitions
                     ]
                 }
