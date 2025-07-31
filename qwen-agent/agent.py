@@ -95,28 +95,35 @@ If you decide to trade, use the appropriate tool with correct parameters.
 If you decide to hold, use the crypto_hold tool with your reasoning.
 """
             
-            print(f"Processing market data: {data}")
+            logger.info(f"DEBUG: Processing market data: {data}")
+            logger.info(f"DEBUG: About to call agent.run with prompt length: {len(prompt)}")
 
             messages = [{'role': 'user', 'content': prompt}]
 
-            print("Processing market data with agent...")
+            logger.info("DEBUG: Processing market data with agent...")
             
             # Process agent response using documented pattern
+            logger.info("DEBUG: Starting agent.run loop...")
             final_response = None
             for response_chunk in self.agent.run(messages=messages):
+                logger.info(f"DEBUG: Got response chunk: {response_chunk}")
                 final_response = response_chunk  # Last iteration contains final response
             
+            logger.info(f"DEBUG: Agent.run loop completed, final_response: {final_response}")
             if final_response:
+                logger.info(f"DEBUG: Sending response to website: {final_response}")
                 print(f"Agent decision: {final_response}")
                 # Send agent response back to website via MCP server
                 await self.send_agent_response_to_website(final_response)
             else:
+                logger.error("DEBUG: No response from agent!")
                 print("No response from agent")
 
             
            
             
         except Exception as e:
+            logger.error(f"DEBUG: Exception in handle_market_data: {e}", exc_info=True)
             print(f"Error processing market data: {e}")
             # Send error notification back to website
             await self.send_agent_response_to_website(f"Error: {str(e)}")
