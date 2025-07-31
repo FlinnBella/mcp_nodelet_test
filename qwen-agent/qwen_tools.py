@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 class MCPTool(BaseTool):
     """Qwen-Agent tool that calls MCP server"""
     
-    def __init__(self, tool_name: str, description: str, parameters: Dict[str, Any], mcp_client: MCPClient):
+    def __init__(self, tool_name: str, description: str, inputSchema: Dict[str, Any], mcp_client: MCPClient):
         self.name = tool_name
         self.description = description
-        self.parameters = parameters
+        self.parameters = inputSchema
         self.mcp_client = mcp_client
         super().__init__()
     
@@ -118,7 +118,7 @@ def create_tools_from_mcp(mcp_client: MCPClient) -> list:
             qwen_tool = MCPTool(
                 tool_name=mcp_tool.name,
                 description=mcp_tool.description,
-                parameters=mcp_tool.parameters,
+                inputSchema=mcp_tool.inputSchema,
                 mcp_client=mcp_client
             )
             tools.append(qwen_tool)
