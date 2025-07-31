@@ -11,27 +11,98 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """
-You are a crypto trading agent. You MUST ALWAYS call exactly ONE tool for every market data update.
-
-CRITICAL RULES:
-1. You MUST call a tool - never just provide text responses
-2. You MUST choose ONE action: buy_crypto, sell_crypto, or hold
-3. You MUST call the tool immediately - no explanations first
-4. If unsure, call hold with a reason
-
+def get_system_prompt(difficulty: str = "medium") -> str:
+    """Generate system prompt based on difficulty level"""
+    
+    base_tools = """
 Available tools:
-- buy_crypto: Execute a buy order (symbol: string, amount: number)
-- sell_crypto: Execute a sell order (symbol: string, amount: number)  
-- hold: Hold current position (reason: string)
+- buy_crypto: Execute buy order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount]}
+- sell_crypto: Execute sell order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount]}  
+- hold: Hold position {"reason": "[your_reasoning]"}
 
-EXAMPLE RESPONSES (you must follow this format):
-- For buying: Call buy_crypto with {"symbol": "BTC", "amount": 100}
-- For selling: Call sell_crypto with {"symbol": "ETH", "amount": 50}
-- For waiting: Call hold with {"reason": "Market conditions unclear"}
-
-REMEMBER: You MUST call a tool. Never provide text-only responses.
+You MUST call exactly ONE tool for every market update.
 """
+    
+    if difficulty == "easy":
+        return f"""
+You are a SIMPLE crypto trading bot. Make quick, basic decisions.
+
+SIMPLE RULES:
+- Buy when prices drop
+- Sell when prices rise  
+- Use risk metrics: only trade if canTrade is true
+- Trade 5-15% of available cash per trade
+- If unsure, just hold
+
+BASIC STRATEGY:
+- Price going up = sell if you own it
+- Price going down = buy with some cash
+- Don't overthink it - just trade!
+
+{base_tools}
+
+Keep it simple. Trade fast.
+"""
+    
+    elif difficulty == "hard":
+        return f"""
+You are an EXPERT crypto trading analyst with advanced market insight.
+
+SOPHISTICATED ANALYSIS FRAMEWORK:
+- Portfolio risk metrics: Analyze riskScore, consecutiveLosses, maxDrawdownToday
+- Risk-adjusted position sizing based on availableBuyingPower and risk constraints
+- Multi-timeframe trend analysis using price momentum and market structure
+- Dynamic position sizing: 2-8% for high-risk, 8-20% for moderate-risk opportunities
+- Risk management: Never exceed tradesRemainingToday/tradesRemainingThisHour limits
+
+ADVANCED DECISION CRITERIA:
+- Evaluate portfolio correlation and concentration risk
+- Consider market regime (trending vs ranging) and volatility environment  
+- Implement proper entry/exit timing based on technical confluences
+- Factor in opportunity cost across all available assets
+- Execute only high-probability setups with favorable risk/reward
+
+EXPERT RISK MANAGEMENT:
+- Respect all risk constraints: maxDrawdownToday, consecutiveLosses limits
+- Position size inversely proportional to recent losses and portfolio heat
+- Consider market correlation during portfolio construction
+- Execute tactical rebalancing based on changing market conditions
+
+{base_tools}
+
+Apply institutional-level analysis. Trade with precision and discipline.
+"""
+    
+    else:  # medium (default)
+        return f"""
+You are a BALANCED crypto trading agent with market analysis skills.
+
+TRADING APPROACH:
+- Analyze market data AND risk metrics before trading
+- Consider portfolio balance, risk score, and trading limits  
+- Use 8-25% of available cash for trades based on confidence
+- Respect risk constraints: check canTrade, tradesRemaining, consecutiveLosses
+
+DECISION PROCESS:
+1. Check if trading is allowed (canTrade = true)
+2. Analyze current prices vs portfolio holdings
+3. Consider risk metrics and daily/hourly trade limits
+4. Make calculated buy/sell decisions
+5. Use appropriate position sizing based on risk
+
+RISK AWARENESS:
+- Monitor consecutiveLosses and maxDrawdownToday
+- Reduce position sizes after losses
+- Increase position sizes during profitable streaks
+- Balance portfolio across BTC, ETH, SOL, DOGE
+
+{base_tools}
+
+Trade thoughtfully with calculated risk management.
+"""
+
+# Default system prompt for backwards compatibility  
+SYSTEM_PROMPT = get_system_prompt("medium")
 
 class QwenTradingAgent:
     def __init__(self):
@@ -81,32 +152,74 @@ class QwenTradingAgent:
         
         print(f"Agent initialized with {len(tools)} tools")
     
-    async def handle_market_data(self, data: Dict[str, Any]):
+    def get_difficulty_config(self, difficulty: str) -> Dict[str, Any]:
+        """Get LLM configuration based on difficulty level"""
+        ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
+        model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
+        
+        base_config = {
+            'model': model_name,
+            'model_server': f'{ollama_url}/v1',
+            'api_key': 'EMPTY',
+        }
+        
+        if difficulty == "easy":
+            base_config['generate_cfg'] = {
+                'temperature': 0.8,    # Higher randomness for impulsive decisions
+                'max_tokens': 150,     # Short responses  
+                'top_p': 0.9,         # Allow more creative responses
+            }
+        elif difficulty == "hard":
+            base_config['generate_cfg'] = {
+                'temperature': 0.2,    # Lower randomness for calculated decisions
+                'max_tokens': 400,     # Longer analysis
+                'top_p': 0.7,         # More focused responses
+            }
+        else:  # medium
+            base_config['generate_cfg'] = {
+                'temperature': 0.5,    # Balanced randomness
+                'max_tokens': 250,     # Moderate analysis
+                'top_p': 0.8,         # Balanced creativity
+            }
+        
+        return base_config
+    
+    async def handle_market_data(self, params: Dict[str, Any]):
         """Handle market data from MCP server"""
         logger.info("DEBUG: handle_market_data called!")
         try:
+            # Extract difficulty and data from params
+            difficulty = params.get("difficulty", "medium")
+            data = params.get("data", {})
+            logger.info(f"DEBUG: Processing with difficulty '{difficulty}': {data}")
+            # Get difficulty-specific configuration
+            llm_config = self.get_difficulty_config(difficulty)
+            
+            # Create dynamic agent for this difficulty level
+            dynamic_agent = Assistant(
+                llm=llm_config,
+                system_message=get_system_prompt(difficulty),
+                function_list=self.agent.function_list  # Reuse existing tools
+            )
+            
             prompt = f"""
-Market data: {json.dumps(data, indent=2)}
+Market Data Analysis:
+{json.dumps(data, indent=2)}
 
-REQUIRED ACTION: Call exactly ONE tool now:
-- buy_crypto if you want to buy (specify symbol and amount)
-- sell_crypto if you want to sell (specify symbol and amount)  
-- hold if you want to wait (specify reason)
-
-Do NOT provide explanations. Call a tool immediately.
+Execute your trading decision now.
 """
             
-            logger.info(f"DEBUG: Processing market data: {data}")
+            logger.info(f"DEBUG: Processing market data with difficulty '{difficulty}': {data}")
             logger.info(f"DEBUG: About to call agent.run with prompt length: {len(prompt)}")
 
             messages = [{'role': 'user', 'content': prompt}]
 
-            logger.info("DEBUG: Processing market data with agent...")
+            logger.info(f"DEBUG: Processing market data with {difficulty} difficulty agent...")
             
             # Process agent response using documented pattern
             logger.info("DEBUG: Starting agent.run loop...")
             final_response = None
-            for response_chunk in self.agent.run(messages=messages):
+            for response_chunk in dynamic_agent.run(messages=messages):
                 logger.info(f"DEBUG: Got response chunk: {response_chunk}")
                 final_response = response_chunk  # Last iteration contains final response
             
@@ -158,7 +271,15 @@ Do NOT provide explanations. Call a tool immediately.
                 await asyncio.sleep(1)
                 # Check connection status every 30 seconds
                 if asyncio.get_event_loop().time() % 30 < 1:
-                    logger.info(f"DEBUG: MCP client connected: {self.mcp_client.connected if self.mcp_client else False}")
+                    is_connected = self.mcp_client.connected if self.mcp_client else False
+                    task_alive = hasattr(self.mcp_client, 'message_handler_task') and not self.mcp_client.message_handler_task.done()
+                    logger.info(f"DEBUG: MCP client connected: {is_connected}, message handler alive: {task_alive}")
+                    if not is_connected and self.mcp_client:
+                        logger.error("DEBUG: Connection lost! Attempting reconnect...")
+                        try:
+                            await self.mcp_client.connect()
+                        except Exception as e:
+                            logger.error(f"DEBUG: Reconnect failed: {e}")
         except KeyboardInterrupt:
             print("Shutting down agent...")
         except Exception as e:

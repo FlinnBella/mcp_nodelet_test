@@ -75,10 +75,12 @@ class WebsiteConnector:
             if message_type == "market_data":
                 # Market data from your website
                 market_data = data.get("data", {})
-                logger.info(f"Received market data: {market_data}")
+                difficulty = data.get("difficulty", "medium")  # Default to medium if not specified - matches ws-server.ts behavior
+                logger.info(f"Received market data with difficulty '{difficulty}': {market_data}")
                 
                 if self.market_data_callback:
-                    await self.market_data_callback(market_data)
+                    # Pass both market data and difficulty to MCP server
+                    await self.market_data_callback(market_data, difficulty)
             #fucking portfolio shit
             elif message_type == "portfolio_update":
                  inital_portfolio = data.get("data", {})

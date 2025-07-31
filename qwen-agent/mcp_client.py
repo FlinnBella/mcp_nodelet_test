@@ -30,8 +30,9 @@ class MCPClient:
                 self.connected = True
                 logger.info(f"Connected to MCP server: {self.server_url}")
                 
-                # Start message handler
-                asyncio.create_task(self.message_handler())
+                # Start message handler and keep reference to prevent garbage collection
+                self.message_handler_task = asyncio.create_task(self.message_handler())
+                logger.info(f"DEBUG: Message handler task created: {self.message_handler_task}")
                 
                 # Initialize connection and get capabilities
                 await self.initialize()

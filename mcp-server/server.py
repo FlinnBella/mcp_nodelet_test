@@ -73,13 +73,14 @@ class MCPTradingServer:
         
         logger.info("Registered 3 trading tools")
     
-    async def handle_market_data(self, data: Dict[str, Any]):
+    async def handle_market_data(self, data: Dict[str, Any], difficulty: str = "medium"):
         """Handle market data from website and broadcast to MCP clients"""
-        logger.info(f"Broadcasting market data to MCP clients: {data}")
+        logger.info(f"Broadcasting market data to MCP clients with difficulty '{difficulty}': {data}")
         await self.mcp_handler.broadcast_notification(
             method="market_data",
             params={
                 "type": "market_data",
+                "difficulty": difficulty,
                 "data": data
             }
         )
