@@ -1,6 +1,7 @@
 import os
 import asyncio
 import json
+import httpx
 from typing import Dict, Any
 from qwen_agent.agents import Assistant
 from mcp_client import MCPClient
@@ -11,22 +12,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
-You are a crypto trading agent connected to trading tools via MCP protocol.
+You are a crypto trading agent. You MUST ALWAYS call exactly ONE tool for every market data update.
 
-You will receive real-time market data and must analyze it to make trading decisions.
+CRITICAL RULES:
+1. You MUST call a tool - never just provide text responses
+2. You MUST choose ONE action: buy_crypto, sell_crypto, or hold
+3. You MUST call the tool immediately - no explanations first
+4. If unsure, call hold with a reason
 
 Available tools:
-- buy_crypto: Execute a buy order (requires symbol and amount)
-- sell_crypto: Execute a sell order (requires symbol and amount)
-- hold: Hold current position (optional reason parameter)
+- buy_crypto: Execute a buy order (symbol: string, amount: number)
+- sell_crypto: Execute a sell order (symbol: string, amount: number)  
+- hold: Hold current position (reason: string)
 
-Trading guidelines:
-- Only trade when you have high confidence
-- Consider market trends, volume, and portfolio balance
-- Manage risk appropriately 
-- Provide clear reasoning for your decisions
+EXAMPLE RESPONSES (you must follow this format):
+- For buying: Call buy_crypto with {"symbol": "BTC", "amount": 100}
+- For selling: Call sell_crypto with {"symbol": "ETH", "amount": 50}
+- For waiting: Call hold with {"reason": "Market conditions unclear"}
 
-When you decide to take action, call the appropriate tool with the correct parameters. Always use one of the avaliable tools when making an action
+REMEMBER: You MUST call a tool. Never provide text-only responses.
 """
 
 class QwenTradingAgent:
@@ -63,9 +67,9 @@ class QwenTradingAgent:
            'model_server' : f'{ollama_url}/v1',
            'api_key' : 'EMPTY',
            'generate_cfg': {
-               'fncall_prompt_type': 'nous',
-               'thought_in_content': False,  # Changed: Disable thinking mode
-               'use_raw_api': True,  # Added: Use native tool calling
+               'temperature': 0.1,
+               'max_tokens': 200,
+               'top_p': 0.8,
            }
         }
         
@@ -82,14 +86,14 @@ class QwenTradingAgent:
         logger.info("DEBUG: handle_market_data called!")
         try:
             prompt = f"""
-New market data received:
-{json.dumps(data, indent=2)}
+Market data: {json.dumps(data, indent=2)}
 
-Analyze this data and decide if any action should be taken.
-Consider the current market conditions, trends, and your trading strategy.
+REQUIRED ACTION: Call exactly ONE tool now:
+- buy_crypto if you want to buy (specify symbol and amount)
+- sell_crypto if you want to sell (specify symbol and amount)  
+- hold if you want to wait (specify reason)
 
-If you decide to trade, use the appropriate tool with correct parameters.
-If you decide to hold, use the crypto_hold tool with your reasoning.
+Do NOT provide explanations. Call a tool immediately.
 """
             
             logger.info(f"DEBUG: Processing market data: {data}")
@@ -108,10 +112,18 @@ If you decide to hold, use the crypto_hold tool with your reasoning.
             
             logger.info(f"DEBUG: Agent.run loop completed, final_response: {final_response}")
             if final_response:
-                logger.info(f"DEBUG: Sending response to website: {final_response}")
-                print(f"Agent decision: {final_response}")
-                # Send agent response back to website via MCP server
-                await self.send_agent_response_to_website(final_response)
+                # Check if response contains tool calls
+                response_text = str(final_response)
+                if any(tool_name in response_text.lower() for tool_name in ['buy_crypto', 'sell_crypto', 'hold']):
+                    logger.info(f"DEBUG: Tool call detected in response")
+                    print(f"Agent decision: {final_response}")
+                    await self.send_agent_response_to_website(final_response)
+                else:
+                    logger.warning(f"DEBUG: No tool call detected, forcing hold action")
+                    # Force a hold action if no tool was called
+                    fallback_response = "Agent failed to call tool, defaulting to hold position"
+                    print(f"Agent decision (fallback): {fallback_response}")
+                    await self.send_agent_response_to_website(fallback_response)
             else:
                 logger.error("DEBUG: No response from agent!")
                 print("No response from agent")
