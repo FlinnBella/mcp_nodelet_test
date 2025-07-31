@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     def __init__(self, server_url: str):
         self.server_url = server_url
-        self.websocket: Optional[websockets.WebSocketServerProtocol] = None
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.tools: List[MCPTool] = []
         self.pending_requests: Dict[str, asyncio.Future] = {}
         self.connected = False

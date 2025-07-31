@@ -46,7 +46,7 @@ class TradingTools:
         """Hold position (no action)"""
         reason = params.get("reason", "No specific reason provided")
         try:
-            result = await self.website.execute_trade(self.action_mapping["hold"])
+            result = await self.website.execute_trade(self.action_mapping["hold"], None, None)
             return f"Successfully held position. Reason: {reason}. Result: {result}"
         except Exception as e:
             raise Exception(f"Hold order failed: {str(e)}")

@@ -83,12 +83,12 @@ class MCPTradingServer:
         }
         try:
             await self.mcp_handler.broadcast_notification(
-                method="market_data",
-                params=data
-            )
+            method="market_data",
+            params=data
+          )
 
-        except Exception as e:
-            print(f"Error in handling market_data: {e}")
+          except Exception as e:
+              print(f"Error in handling market_data: {e}")
     
     async def start(self):
         """Start both MCP server and Website WebSocket server"""
