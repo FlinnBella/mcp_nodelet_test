@@ -152,6 +152,7 @@ class QwenTradingAgent:
                'temperature': 0.1,
                'max_tokens': 200,
                'top_p': 0.8,
+               'thought_in_content' : False,
            }
         }
         
@@ -176,21 +177,24 @@ class QwenTradingAgent:
         
         if difficulty == "easy":
             base_config['generate_cfg'] = {
-                'temperature': 0.8,    # Higher randomness for impulsive decisions
+                'temperature': 0.4,    # Higher randomness for impulsive decisions
                 'max_tokens': 150,     # Short responses  
-                'top_p': 0.9,         # Allow more creative responses
+                'top_p': 0.2,         # Allow more creative responses
+                'thought_in_content' : False,
             }
         elif difficulty == "hard":
             base_config['generate_cfg'] = {
-                'temperature': 0.2,    # Lower randomness for calculated decisions
+                'temperature': 0.1,    # Lower randomness for calculated decisions
                 'max_tokens': 400,     # Longer analysis
-                'top_p': 0.7,         # More focused responses
+                'top_p': 0.1,         # More focused responses
+                'thought_in_content' : False,
             }
         else:  # medium
             base_config['generate_cfg'] = {
-                'temperature': 0.5,    # Balanced randomness
+                'temperature': 0.2,    # Balanced randomness
                 'max_tokens': 250,     # Moderate analysis
-                'top_p': 0.8,         # Balanced creativity
+                'top_p': 0.2,         # Balanced creativity
+                'thought_in_content' : False,
             }
         
         return base_config
@@ -208,10 +212,10 @@ class QwenTradingAgent:
             tools = create_tools_from_mcp(self.mcp_client)
             
             # Create dynamic agent for this difficulty level
-            dynamic_agent = Assistant(
+            agent = Assistant(
                 llm=llm_config,
                 system_message=get_system_prompt(difficulty),
-                function_list=tools
+                function_list=tools,
             )
             
             prompt = f"""
@@ -242,7 +246,7 @@ Execute your trading decision now. Remember to check portfolio.riskMetrics.canTr
             # Process agent response using documented pattern
             logger.info("DEBUG: Starting agent.run loop...")
             final_response = None
-            for response_chunk in dynamic_agent.run(messages=messages):
+            for response_chunk in agent.run(messages=messages):
                 logger.info(f"DEBUG: Got response chunk: {response_chunk}")
                 final_response = response_chunk  # Last iteration contains final response
             
