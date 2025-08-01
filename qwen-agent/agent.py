@@ -148,7 +148,7 @@ class QwenTradingAgent:
            'model' : model_name,
            'model_server' : f'{ollama_url}/v1',
            'api_key' : 'EMPTY',
-           'fncall_prompt_type': 'openai',
+           'fncall_prompt_type': 'nous',
            'generate_cfg': {
                'temperature': 0.1,
                'max_tokens': 200,
@@ -174,7 +174,7 @@ class QwenTradingAgent:
             'model': model_name,
             'model_server': f'{ollama_url}/v1',
             'api_key': 'EMPTY',
-            'fncall_prompt_type': 'openai',
+            'fncall_prompt_type': 'nous',
         }
         
         if difficulty == "easy":
