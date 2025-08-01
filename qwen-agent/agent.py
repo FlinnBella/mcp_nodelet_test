@@ -154,6 +154,7 @@ class QwenTradingAgent:
                'max_tokens': 200,
                'top_p': 0.8,
                'thought_in_content' : False,
+               'enable_thinking': False,
            }
         }
         
@@ -183,6 +184,7 @@ class QwenTradingAgent:
                 'max_tokens': 150,     # Short responses  
                 'top_p': 0.2,         # Allow more creative responses
                 'thought_in_content' : False,
+                'enable_thinking': False,
             }
         elif difficulty == "hard":
             base_config['generate_cfg'] = {
@@ -190,6 +192,7 @@ class QwenTradingAgent:
                 'max_tokens': 400,     # Longer analysis
                 'top_p': 0.1,         # More focused responses
                 'thought_in_content' : False,
+                'enable_thinking': False,
             }
         else:  # medium
             base_config['generate_cfg'] = {
@@ -197,7 +200,7 @@ class QwenTradingAgent:
                 'max_tokens': 250,     # Moderate analysis
                 'top_p': 0.2,         # Balanced creativity
                 'thought_in_content' : False,
-                
+                'enable_thinking': False,
             }
         
         return base_config
