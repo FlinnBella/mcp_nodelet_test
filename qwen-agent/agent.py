@@ -160,7 +160,7 @@ class QwenTradingAgent:
         self.agent = Assistant(
             llm=llm_config,
             system_message=SYSTEM_PROMPT,
-            function_list=tools
+            tools=tools
         )
         
         print(f"Agent initialized with {len(tools)} tools")
@@ -218,7 +218,7 @@ class QwenTradingAgent:
             agent = Assistant(
                 llm=llm_config,
                 system_message=get_system_prompt(difficulty),
-                function_list=tools,
+                tools=tools,
             )
             
             prompt = f"""
