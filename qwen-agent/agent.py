@@ -1,127 +1,23 @@
 import os
 import asyncio
 import json
-import httpx
-from typing import Dict, Any
-from qwen_agent.agents import Assistant
-from mcp_client import MCPClient
-from qwen_tools import create_tools_from_mcp
+import uuid
 import logging
+import websockets
+from typing import Dict, Any, Set, Optional
+from mcp_client import MCPClient
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_system_prompt(difficulty: str = "medium") -> str:
-    """Generate system prompt based on difficulty level"""
-    
-    base_tools = """
-Available tools:
-- buy_crypto: Execute buy order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount], "reason": "[detailed_reasoning]"}
-- sell_crypto: Execute sell order {"symbol": "BTC|ETH|SOL|DOGE", "amount": [USD_amount], "reason": "[detailed_reasoning]"}  
-- hold: Hold position {"reason": "[detailed_reasoning]"}
-
-CRITICAL RISK RULES:
-- ONLY trade if portfolio.riskMetrics.canTrade = true
-- Respect availableBuyingPower for buy orders
-- Check tradesRemainingToday and tradesRemainingThisHour limits
-- Consider riskScore, consecutiveLosses, and maxDrawdownToday
-- Never exceed position limits or risk thresholds
-
-You MUST call exactly ONE tool for every market update.
-"""
-    
-    if difficulty == "easy":
-        return f"""
-You are a SIMPLE crypto trading bot. Make quick, basic decisions.
-
-SIMPLE RULES:
-- Buy when prices drop
-- Sell when prices rise  
-- ONLY trade if portfolio.riskMetrics.canTrade = true
-- Trade 5-15% of availableBuyingPower per trade
-- Check tradesRemainingToday and tradesRemainingThisHour
-- If unsure, just hold
-
-BASIC STRATEGY:
-- Price going up = sell if you own it
-- Price going down = buy with some cash
-- Don't overthink it - just trade!
-- Always provide detailed reasoning in the reason field
-
-{base_tools}
-
-Keep it simple. Trade fast.
-"""
-    
-    elif difficulty == "hard":
-        return f"""
-You are an EXPERT crypto trading analyst with advanced market insight.
-
-SOPHISTICATED ANALYSIS FRAMEWORK:
-- Portfolio risk metrics: Analyze riskScore, consecutiveLosses, maxDrawdownToday
-- Risk-adjusted position sizing based on availableBuyingPower and risk constraints
-- Multi-timeframe trend analysis using price momentum and market structure
-- Dynamic position sizing: 2-8% for high-risk, 8-20% for moderate-risk opportunities
-- Risk management: Never exceed tradesRemainingToday/tradesRemainingThisHour limits
-
-ADVANCED DECISION CRITERIA:
-- Evaluate portfolio correlation and concentration risk
-- Consider market regime (trending vs ranging) and volatility environment  
-- Implement proper entry/exit timing based on technical confluences
-- Factor in opportunity cost across all available assets
-- Execute only high-probability setups with favorable risk/reward
-
-EXPERT RISK MANAGEMENT:
-- Respect all risk constraints: maxDrawdownToday, consecutiveLosses limits
-- Position size inversely proportional to recent losses and portfolio heat
-- Consider market correlation during portfolio construction
-- Execute tactical rebalancing based on changing market conditions
-- ALWAYS check portfolio.riskMetrics.canTrade before any action
-
-{base_tools}
-
-Apply institutional-level analysis. Trade with precision and discipline.
-"""
-    
-    else:  # medium (default)
-        return f"""
-You are a BALANCED crypto trading agent with market analysis skills.
-
-TRADING APPROACH:
-- Analyze market data AND risk metrics before trading
-- Consider portfolio balance, risk score, and trading limits  
-- Use 8-25% of availableBuyingPower for trades based on confidence
-- Respect risk constraints: check portfolio.riskMetrics.canTrade, tradesRemaining, consecutiveLosses
-
-DECISION PROCESS:
-1. Check if trading is allowed (portfolio.riskMetrics.canTrade = true)
-2. Analyze current prices vs portfolio holdings
-3. Consider risk metrics and daily/hourly trade limits
-4. Make calculated buy/sell decisions
-5. Use appropriate position sizing based on risk
-
-RISK AWARENESS:
-- Monitor consecutiveLosses and maxDrawdownToday
-- Reduce position sizes after losses
-- Increase position sizes during profitable streaks
-- Balance portfolio across BTC, ETH, SOL, DOGE
-- Always provide detailed reasoning in the reason field
-
-{base_tools}
-
-Trade thoughtfully with calculated risk management.
-"""
-
-# Default system prompt for backwards compatibility  
-SYSTEM_PROMPT = get_system_prompt("medium")
-
-class QwenTradingAgent:
+class MCPToKaggleBridge:
     def __init__(self):
-        self.mcp_client = None
-        self.agent = None
+        self.mcp_client: Optional[MCPClient] = None
+        self.kaggle_clients: Set[websockets.WebSocketServerProtocol] = set()
+        self.mcp_tools: list = []
+        self.running = False
         
     async def initialize(self):
-        """Initialize MCP client and Qwen agent"""
+        """Initialize MCP client connection"""
         # Connect to MCP server
         mcp_server_url = os.getenv("MCP_SERVER_URL", "ws://mcp-server:8001")
         self.mcp_client = MCPClient(mcp_server_url)
@@ -133,200 +29,254 @@ class QwenTradingAgent:
              logger.error(f"Failed to connect due to: {e}")
              raise 
         
-        # Set up market data callback
-        self.mcp_client.set_market_data_callback(self.handle_market_data)
-        logger.info("DEBUG: Market data callback registered")
+        # Set up market data callback to forward to Kaggle
+        self.mcp_client.set_market_data_callback(self.forward_market_data_to_kaggle)
         
-        # Create tools from MCP server capabilities
-        tools = create_tools_from_mcp(self.mcp_client)
+        # Get tools from MCP server
+        self.mcp_tools = self.mcp_client.tools.copy()
         
-        # Initialize Qwen agent
-        ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
-        model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
-
-        llm_config = {
-           'model' : model_name,
-           'model_server' : f'{ollama_url}/v1',
-           'api_key' : 'EMPTY',
-           'fncall_prompt_type': 'nous',
-           'generate_cfg': {
-               'temperature': 0.1,
-               'max_tokens': 200,
-               'top_p': 0.8,
-               'thought_in_content' : False,
-           }
+        print(f"MCP Bridge initialized with {len(self.mcp_tools)} tools from MCP server")
+        logger.info(f"Available tools: {[tool.name for tool in self.mcp_tools]}")
+        
+    async def forward_market_data_to_kaggle(self, mcp_notification: Dict[str, Any]):
+        """Forward market data from MCP server to all connected Kaggle clients"""
+        if not self.kaggle_clients:
+            logger.debug("No Kaggle clients connected, skipping market data forward")
+            return
+        
+        # Extract the complete payload from MCP notification
+        params = mcp_notification.get("params", {})
+        payload_data = params.get("data", {})
+        timestamp = params.get("timestamp")
+        
+        # Extract components from the complex payload structure
+        market_data = payload_data.get("marketData", {})
+        portfolio = payload_data.get("portfolio", {})
+        current_prices = payload_data.get("currentPrices", {})
+        risk_config = payload_data.get("riskConfig", {})
+        difficulty = payload_data.get("difficulty", "medium")
+        original_request_id = payload_data.get("requestId")
+        
+        logger.info(f"Forwarding complex market data to Kaggle - difficulty: {difficulty}, original requestId: {original_request_id}")
+            
+        # Create message for Kaggle in expected format
+        message = {
+            "type": "market_data_request",
+            "request_id": original_request_id or str(uuid.uuid4()),
+            "market_data": {
+                "marketData": market_data,
+                "portfolio": portfolio,
+                "currentPrices": current_prices,
+                "riskConfig": risk_config,
+                "timestamp": timestamp
+            },
+            "difficulty": difficulty,
+            "timestamp": timestamp or asyncio.get_event_loop().time()
         }
         
-        self.agent = Assistant(
-            llm=llm_config,
-            system_message=SYSTEM_PROMPT,
-            function_list=tools
-        )
+        # Send to all connected Kaggle clients
+        disconnected_clients = set()
+        for client in self.kaggle_clients.copy():
+            try:
+                await client.send(json.dumps(message))
+                logger.debug(f"Complex market data forwarded to Kaggle client: {client.remote_address}")
+            except websockets.exceptions.ConnectionClosed:
+                disconnected_clients.add(client)
+            except Exception as e:
+                logger.error(f"Error forwarding market data to client: {e}")
+                disconnected_clients.add(client)
         
-        print(f"Agent initialized with {len(tools)} tools")
+        # Clean up disconnected clients
+        for client in disconnected_clients:
+            self.kaggle_clients.discard(client)
     
-    def get_difficulty_config(self, difficulty: str) -> Dict[str, Any]:
-        """Get LLM configuration based on difficulty level"""
-        ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
-        model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
+    async def handle_kaggle_client(self, websocket, path):
+        """Handle incoming Kaggle WebSocket connections"""
+        client_addr = websocket.remote_address
+        self.kaggle_clients.add(websocket)
+        logger.info(f"Kaggle client connected: {client_addr}")
         
-        base_config = {
-            'model': model_name,
-            'model_server': f'{ollama_url}/v1',
-            'api_key': 'EMPTY',
-            'fncall_prompt_type': 'nous',
-        }
+        # Send connection confirmation
+        await websocket.send(json.dumps({
+            "type": "connection_established",
+            "message": "Connected to MCP Bridge successfully"
+        }))
         
-        if difficulty == "easy":
-            base_config['generate_cfg'] = {
-                'temperature': 0.4,    # Higher randomness for impulsive decisions
-                'max_tokens': 150,     # Short responses  
-                'top_p': 0.2,         # Allow more creative responses
-                'thought_in_content' : False,
-            }
-        elif difficulty == "hard":
-            base_config['generate_cfg'] = {
-                'temperature': 0.1,    # Lower randomness for calculated decisions
-                'max_tokens': 400,     # Longer analysis
-                'top_p': 0.1,         # More focused responses
-                'thought_in_content' : False,
-            }
-        else:  # medium
-            base_config['generate_cfg'] = {
-                'temperature': 0.2,    # Balanced randomness
-                'max_tokens': 250,     # Moderate analysis
-                'top_p': 0.2,         # Balanced creativity
-                'thought_in_content' : False,
-                
-            }
-        
-        return base_config
-    
-    async def handle_market_data(self, params: Dict[str, Any]):
-        """Handle market data from MCP server"""
-        logger.info("DEBUG: handle_market_data called!")
         try:
-            # Extract difficulty and data from params
-            difficulty = params.get("difficulty", "medium")
-            data = params.get("data", {})
-            logger.info(f"DEBUG: Processing with difficulty '{difficulty}': {data}")
-            # Get difficulty-specific configuration
-            llm_config = self.get_difficulty_config(difficulty)
-            tools = create_tools_from_mcp(self.mcp_client)
+            async for message in websocket:
+                await self.process_kaggle_message(websocket, message)
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"Kaggle client disconnected: {client_addr}")
+        except Exception as e:
+            logger.error(f"Error handling Kaggle client {client_addr}: {e}")
+        finally:
+            self.kaggle_clients.discard(websocket)
+    
+    async def process_kaggle_message(self, websocket, message: str):
+        """Process incoming messages from Kaggle clients"""
+        try:
+            data = json.loads(message)
+            message_type = data.get("type")
             
-            # Create dynamic agent for this difficulty level
-            agent = Assistant(
-                llm=llm_config,
-                system_message=get_system_prompt(difficulty),
-                function_list=tools,
-            )
+            logger.debug(f"Received message from Kaggle: {message_type}")
             
-            prompt = f"""
-Market Data Analysis:
-{json.dumps(data, indent=2)}
-
-CRITICAL RISK CONTEXT:
-- Portfolio Value: ${data.get('portfolio', {}).get('totalValue', 0):,.2f}
-- Daily Change: {data.get('portfolio', {}).get('dailyChangePercent', 0):.2f}%
-- Available Buying Power: ${data.get('portfolio', {}).get('availableBuyingPower', 0):,.2f}
-- Risk Score: {data.get('portfolio', {}).get('riskMetrics', {}).get('riskScore', 0)}/100
-- Can Trade: {data.get('portfolio', {}).get('riskMetrics', {}).get('canTrade', False)}
-- Trades Remaining Today: {data.get('portfolio', {}).get('riskMetrics', {}).get('tradesRemainingToday', 0)}
-- Trades Remaining This Hour: {data.get('portfolio', {}).get('riskMetrics', {}).get('tradesRemainingThisHour', 0)}
-- Consecutive Losses: {data.get('portfolio', {}).get('riskMetrics', {}).get('consecutiveLosses', 0)}
-- Max Drawdown Today: {data.get('portfolio', {}).get('riskMetrics', {}).get('maxDrawdownToday', 0):.2f}%
-
-Execute your trading decision now. Remember to check portfolio.riskMetrics.canTrade before any action.
-"""
-            
-            logger.info(f"DEBUG: Processing market data with difficulty '{difficulty}': {data}")
-            logger.info(f"DEBUG: About to call agent.run with prompt length: {len(prompt)}")
-
-            messages = [{'role': 'user', 'content': prompt}]
-
-            logger.info(f"DEBUG: Processing market data with {difficulty} difficulty agent...")
-            
-            # Process agent response using documented pattern
-            logger.info("DEBUG: Starting agent.run loop...")
-            final_response = None
-            for response_chunk in agent.run(messages=messages):
-                logger.info(f"DEBUG: Got response chunk: {response_chunk}")
-                final_response = response_chunk  # Last iteration contains final response
-            
-            logger.info(f"DEBUG: Agent.run loop completed, final_response: {final_response}")
-            if final_response:
-                # Check if response contains function_call
-                has_function_call = False
-                if isinstance(final_response, list):
-                    for msg in final_response:
-                        if isinstance(msg, dict) and 'function_call' in msg:
-                            has_function_call = True
-                            logger.info(f"DEBUG: ===== FUNCTION CALL DETECTED =====")
-                            logger.info(f"DEBUG: Function call: {msg['function_call']}")
-                            break
+            if message_type == "request_tools":
+                await self.handle_tools_request(websocket)
                 
-                if has_function_call:
-                    logger.info(f"DEBUG: Tool execution should have completed")
-                    print(f"Agent decision: {final_response}")
-                    await self.send_agent_response_to_website(final_response)
-                else:
-                    logger.warning(f"DEBUG: No function call detected in response")
-                    # Force a hold action if no tool was called
-                    fallback_response = "Agent failed to call tool, defaulting to hold position"
-                    print(f"Agent decision (fallback): {fallback_response}")
-                    await self.send_agent_response_to_website(fallback_response)
+            elif message_type == "status":
+                await self.handle_status_message(websocket, data)
+                
+            elif message_type == "heartbeat":
+                await self.handle_heartbeat(websocket, data)
+                
+            elif message_type == "market_data_response":
+                await self.handle_market_data_response(data)
+                
             else:
-                logger.error("DEBUG: No response from agent!")
-                print("No response from agent")
-
+                logger.warning(f"Unknown message type from Kaggle: {message_type}")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from Kaggle client: {e}")
+        except Exception as e:
+            logger.error(f"Error processing Kaggle message: {e}")
+    
+    async def handle_tools_request(self, websocket):
+        """Send MCP tools to Kaggle client in exact MCP specification format"""
+        try:
+            # Convert MCPTool objects to proper MCP specification format
+            tools_data = []
+            for tool in self.mcp_tools:
+                tool_dict = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.parameters  # MCP spec uses inputSchema, not parameters
+                }
+                tools_data.append(tool_dict)
             
-           
+            response = {
+                "type": "tools_response",
+                "tools": tools_data
+            }
+            
+            await websocket.send(json.dumps(response))
+            logger.info(f"Sent {len(tools_data)} tools to Kaggle client in MCP format")
             
         except Exception as e:
-            logger.error(f"DEBUG: Exception in handle_market_data: {e}", exc_info=True)
-            print(f"Error processing market data: {e}")
-            # Send error notification back to website
-            await self.send_agent_response_to_website(f"Error: {str(e)}")
+            logger.error(f"Error sending tools to Kaggle: {e}")
+    
+    async def handle_status_message(self, websocket, data):
+        """Handle status updates from Kaggle"""
+        status = data.get("status")
+        logger.info(f"Kaggle client status: {status}")
+        
+        # Acknowledge status
+        await websocket.send(json.dumps({
+            "type": "status_ack",
+            "received_status": status
+        }))
+    
+    async def handle_heartbeat(self, websocket, data):
+        """Handle heartbeat from Kaggle and respond"""
+        await websocket.send(json.dumps({
+            "type": "heartbeat_ack",
+            "timestamp": asyncio.get_event_loop().time()
+        }))
+    
+    async def handle_market_data_response(self, data):
+        """Handle trading decisions from Kaggle and route to MCP server"""
+        request_id = data.get("request_id")
+        response = data.get("response")
+        
+        logger.info(f"Received trading decision from Kaggle for request {request_id}")
+        
+        # Parse the trading decision and forward to MCP server
+        try:
+            if response:
+                # Handle both dict and string response formats
+                if isinstance(response, str):
+                    try:
+                        response = json.loads(response)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not parse response as JSON: {response}")
+                        return
+                
+                if isinstance(response, dict):
+                    function_call = response.get("function_call")
+                    if function_call:
+                        tool_name = function_call.get("name")
+                        arguments = function_call.get("arguments", {})
+                        
+                        if isinstance(arguments, str):
+                            try:
+                                arguments = json.loads(arguments)
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse arguments as JSON: {arguments}")
+                                return
+                        
+                        # Forward tool call to MCP server
+                        if self.mcp_client and tool_name:
+                            logger.info(f"Forwarding tool call to MCP server: {tool_name} with args {arguments}")
+                            result = await self.mcp_client.call_tool(tool_name, arguments)
+                            logger.info(f"MCP server tool execution result: {result}")
+                        else:
+                            logger.warning("No tool name found in trading decision or MCP client not available")
+                    else:
+                        logger.debug("No function call in trading response, likely a hold decision")
+                else:
+                    logger.warning(f"Invalid response format from Kaggle: {type(response)}")
+            else:
+                logger.warning("Empty response from Kaggle")
+                
+        except Exception as e:
+            logger.error(f"Error processing trading decision: {e}")
+            logger.error(f"Request data: {data}")
+            logger.error(f"Response data: {response}")
+    
+    async def start_websocket_server(self, host: str = "0.0.0.0", port: int = 8004):
+        """Start WebSocket server for Kaggle connections"""
+        logger.info(f"Starting WebSocket server for Kaggle on {host}:{port}")
+        
+        async with websockets.serve(self.handle_kaggle_client, host, port):
+            logger.info(f"WebSocket server running on ws://{host}:{port}")
+            self.running = True
+            
+            # Keep the server running
+            try:
+                while self.running:
+                    await asyncio.sleep(1)
+            except KeyboardInterrupt:
+                logger.info("Shutting down WebSocket server...")
+            finally:
+                self.running = False
     
     async def run(self):
-        """Main agent loop"""
+        """Main bridge loop"""
+        await self.initialize()
         
-        # Keep the agent running
-        try:
-            await self.initialize()
+        logger.info("MCP to Kaggle Bridge is running...")
+        logger.info("Waiting for Kaggle connections and market data...")
+        
+        # Start WebSocket server for Kaggle connections
+        await self.start_websocket_server()
 
-            logger.info("QWEN_AGENT RUNNING")
-  
-            while True:
-                await asyncio.sleep(1)
-                # Check connection status every 30 seconds
-                if asyncio.get_event_loop().time() % 30 < 1:
-                    is_connected = self.mcp_client.connected if self.mcp_client else False
-                    task_alive = hasattr(self.mcp_client, 'message_handler_task') and not self.mcp_client.message_handler_task.done()
-                    logger.info(f"DEBUG: MCP client connected: {is_connected}, message handler alive: {task_alive}")
-                    if not is_connected and self.mcp_client:
-                        logger.error("DEBUG: Connection lost! Attempting reconnect...")
-                        try:
-                            await self.mcp_client.connect()
-                        except Exception as e:
-                            logger.error(f"DEBUG: Reconnect failed: {e}")
-        except KeyboardInterrupt:
-            print("Shutting down agent...")
-        except Exception as e:
-            logger.error(f"Agent error: {e}")
-            raise
-        finally:
-            if self.mcp_client:
-                await self.mcp_client.disconnect()
+async def main():
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     
-    async def send_agent_response_to_website(self, response):
-        """Send agent decision/response back to website via MCP server"""
-        try:
-            if self.mcp_client and self.mcp_client.connected:
-                await self.mcp_client.send_request("agent_response", {
-                    "response": str(response),
-                    "timestamp": asyncio.get_event_loop().time()
-                })
-                print(f"Sent agent response to MCP server")
-        except Exception as e:
-            print(f"Failed to send agent response to website: {e}")
+    bridge = MCPToKaggleBridge()
+    
+    try:
+        await bridge.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down bridge...")
+    except Exception as e:
+        logger.error(f"Bridge error: {e}")
+    finally:
+        if bridge.mcp_client:
+            await bridge.mcp_client.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())

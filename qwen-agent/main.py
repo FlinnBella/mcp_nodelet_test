@@ -1,8 +1,8 @@
 import asyncio
-from agent import QwenTradingAgent
+from agent import MCPToKaggleBridge
 
 async def main():
-    agent = QwenTradingAgent()
+    agent = MCPToKaggleBridge()
     await agent.run()
 
 if __name__ == "__main__":

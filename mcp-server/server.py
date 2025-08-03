@@ -1,7 +1,7 @@
 import asyncio
 import os
 import logging
-from typing import Dict, Any  # FIXED: Added missing imports
+from typing import Dict, Any
 from mcp_protocol import MCPProtocolHandler
 from trading_tools import TradingTools
 from website_connector import WebsiteConnector
@@ -19,80 +19,86 @@ class MCPTradingServer:
         
         # Register tools with MCP protocol
         self.register_tools()
-        
-        # Set up agent response callback
-        self.mcp_handler.set_agent_response_callback(self.handle_agent_response)
     
     def register_tools(self):
         """Register trading tools with MCP handler"""
-        # FIXED: Actually register the tools
-        
-        # Buy tool
+        # Register buy_crypto tool (frontend naming)
         self.mcp_handler.register_tool(
             name="buy_crypto",
-            description="Execute a cryptocurrency buy order. Consider risk metrics: only trade if canTrade=true, respect availableBuyingPower, and check tradesRemaining limits.",
+            description="Execute a cryptocurrency buy order",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH, SOL, DOGE)"},
-                    "amount": {"type": "number", "description": "Amount to buy in USD"},
-                    "reason": {"type": "string", "description": "Reasoning for the buy decision"}
+                    "crypto": {
+                        "type": "string",
+                        "description": "The cryptocurrency symbol to buy (e.g., BTC, ETH)"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "The amount to buy"
+                    }
                 },
-                "required": ["symbol", "amount", "reason"]
+                "required": ["crypto", "amount"]
             },
             handler=self.trading_tools.buy_crypto
         )
         
-        # Sell tool
+        # Register sell_crypto tool (frontend naming)
         self.mcp_handler.register_tool(
-            name="sell_crypto", 
-            description="Execute a cryptocurrency sell order. Consider risk metrics: only trade if canTrade=true and check tradesRemaining limits.",
+            name="sell_crypto",
+            description="Execute a cryptocurrency sell order",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "symbol": {"type": "string", "description": "Cryptocurrency symbol (e.g., BTC, ETH, SOL, DOGE)"},
-                    "amount": {"type": "number", "description": "Amount to sell in USD"},
-                    "reason": {"type": "string", "description": "Reasoning for the sell decision"}
+                    "crypto": {
+                        "type": "string",
+                        "description": "The cryptocurrency symbol to sell (e.g., BTC, ETH)"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "The amount to sell"
+                    }
                 },
-                "required": ["symbol", "amount", "reason"]
+                "required": ["crypto", "amount"]
             },
             handler=self.trading_tools.sell_crypto
         )
         
-        # Hold tool
+        # Register hold tool (frontend naming)
         self.mcp_handler.register_tool(
             name="hold",
-            description="Hold current position (no action). Use when risk metrics indicate trading should be avoided or when market conditions are uncertain.",
+            description="Hold current position without taking any action",
             inputSchema={
-                "type": "object", 
+                "type": "object",
                 "properties": {
-                    "reason": {"type": "string", "description": "Detailed reasoning for holding position"}
+                    "reason": {
+                        "type": "string",
+                        "description": "The reasoning for holding the position"
+                    }
                 },
-                "required": ["reason"]
+                "required": []
             },
             handler=self.trading_tools.hold
         )
-        
-        logger.info("Registered 3 trading tools")
     
-    async def handle_market_data(self, data: Dict[str, Any], difficulty: str = "medium"):
-        """Handle market data from website and broadcast to MCP clients"""
-        logger.info(f"Broadcasting market data to MCP clients with difficulty '{difficulty}': {data}")
+    async def handle_market_data(self, payload: Dict[str, Any]):
+        """Handle complex market data payload from website and broadcast to MCP clients"""
+        # Extract the nested data structure
+        payload_data = payload.get("data", {})
+        difficulty = payload_data.get("difficulty", "medium")
+        request_id = payload_data.get("requestId")
+        timestamp = payload.get("timestamp")
+        
+        logger.info(f"Broadcasting market data to MCP clients - difficulty: {difficulty}, requestId: {request_id}")
+        
+        # Broadcast the complete payload structure to all MCP clients (including agent.py)
         await self.mcp_handler.broadcast_notification(
             method="market_data",
             params={
                 "type": "market_data",
-                "difficulty": difficulty,
-                "data": data
+                "data": payload_data,  # Pass the complete nested data structure
+                "timestamp": timestamp
             }
-        )
-    
-    async def handle_agent_response(self, response_data: str):
-        """Handle agent response and broadcast to website clients"""
-        logger.info(f"Forwarding agent response to website clients: {response_data}")
-        await self.website_connector.broadcast_message(
-            message_type="agent_decision",
-            data={"decision": response_data}
         )
     
     async def start(self):

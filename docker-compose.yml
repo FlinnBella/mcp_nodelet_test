@@ -33,10 +33,11 @@ services:
     container_name: crypto-qwen-agent
     ports:
       - "8000:8000"
+      - "8004:8004"
     environment:
-      - VLLM_URL=http://vllm-qwen:8000  # Point to vllm docker container
       - MCP_SERVER_URL=ws://mcp-server:8001
-      - MODEL_NAME=hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8004
       - PYTHONPATH=/app
     volumes:
       - ./shared:/app/shared

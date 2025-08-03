@@ -73,19 +73,39 @@ class WebsiteConnector:
             
             
             if message_type == "market_data":
-                # Market data from your website
-                market_data = data.get("data", {})
-                difficulty = data.get("difficulty", "medium")  # Default to medium if not specified - matches ws-server.ts behavior
-                logger.info(f"Received market data with difficulty '{difficulty}': {market_data}")
+                # Handle complex aiPayload structure from frontend
+                payload_data = data.get("data", {})
+                
+                # Extract difficulty from nested structure
+                difficulty = payload_data.get("difficulty", "medium")
+                
+                # Extract the actual market data and other components
+                market_data = payload_data.get("marketData", {})
+                portfolio = payload_data.get("portfolio", {})
+                current_prices = payload_data.get("currentPrices", {})
+                risk_config = payload_data.get("riskConfig", {})
+                request_id = payload_data.get("requestId")
+                timestamp = data.get("timestamp", asyncio.get_event_loop().time())
+                
+                logger.info(f"Received complex market data payload with difficulty '{difficulty}', requestId: {request_id}")
+                
+                # Reconstruct the full payload for MCP clients
+                complete_payload = {
+                    "type": "market_data",
+                    "data": {
+                        "marketData": market_data,
+                        "portfolio": portfolio,
+                        "currentPrices": current_prices,
+                        "riskConfig": risk_config,
+                        "difficulty": difficulty,
+                        "requestId": request_id
+                    },
+                    "timestamp": timestamp
+                }
                 
                 if self.market_data_callback:
-                    # Pass both market data and difficulty to MCP server
-                    await self.market_data_callback(market_data, difficulty)
-            #fucking portfolio shit
-            elif message_type == "portfolio_update":
-                 inital_portfolio = data.get("data", {})
-                 #fucking shit 
-        
+                    await self.market_data_callback(complete_payload)
+                    
             elif message_type == "trade_confirmation":
                 # Trade execution confirmation from your website
                 confirmation = data.get("data", {})
