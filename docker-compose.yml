@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # MCP Server container
   mcp-server:
     build: 
       context: .  # Use root context so Dockerfile can access ../shared
@@ -33,7 +34,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_URL=http://ollama:11434  # Point to Ollama docker container
+      - VLLM_URL=http://vllm-qwen:8000  # Point to vllm docker container
       - MCP_SERVER_URL=ws://mcp-server:8001
       - MODEL_NAME=hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M
       - PYTHONPATH=/app
