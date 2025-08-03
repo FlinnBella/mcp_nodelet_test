@@ -1,104 +1,276 @@
 import os
 import asyncio
 import json
-from typing import Dict, Any
-from qwen_agent.agents import Assistant
+import uuid
+import logging
+import websockets
+from typing import Dict, Any, Set, Optional
 from mcp_client import MCPClient
-from qwen_tools import create_tools_from_mcp
 
-SYSTEM_PROMPT = """
-You are a crypto trading agent connected to trading tools via MCP protocol.
+logger = logging.getLogger(__name__)
 
-You will receive real-time market data and must analyze it to make trading decisions.
-
-Available tools will be dynamically loaded from the MCP server.
-
-Trading guidelines:
-- Only trade when you have high confidence
-- Consider market trends, volume, and portfolio balance
-- Manage risk appropriately 
-- Provide clear reasoning for your decisions
-
-When you decide to take action, call the appropriate tool with the correct parameters.
-"""
-
-class QwenTradingAgent:
+class MCPToKaggleBridge:
     def __init__(self):
-        self.mcp_client = None
-        self.agent = None
+        self.mcp_client: Optional[MCPClient] = None
+        self.kaggle_clients: Set[websockets.WebSocketServerProtocol] = set()
+        self.mcp_tools: list = []
+        self.running = False
         
     async def initialize(self):
-        """Initialize MCP client and Qwen agent"""
+        """Initialize MCP client connection"""
         # Connect to MCP server
         mcp_server_url = os.getenv("MCP_SERVER_URL", "ws://mcp-server:8001")
         self.mcp_client = MCPClient(mcp_server_url)
         await self.mcp_client.connect()
         
-        # Set up market data callback
-        self.mcp_client.set_market_data_callback(self.handle_market_data)
+        # Set up market data callback to forward to Kaggle
+        self.mcp_client.set_market_data_callback(self.forward_market_data_to_kaggle)
         
-        # Create tools from MCP server capabilities
-        tools = create_tools_from_mcp(self.mcp_client)
+        # Get tools from MCP server
+        self.mcp_tools = self.mcp_client.tools.copy()
         
-        # Initialize Qwen agent
-        ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
-        model_name = os.getenv("MODEL_NAME", "qwen:14b")
+        print(f"MCP Bridge initialized with {len(self.mcp_tools)} tools from MCP server")
+        logger.info(f"Available tools: {[tool.name for tool in self.mcp_tools]}")
         
-        self.agent = Assistant(
-            llm_cfg={
-                'model': model_name,
-                'api_base': f'{ollama_url}/v1',
-                'api_key': 'dummy',
-                'model_server': 'ollama'
+    async def forward_market_data_to_kaggle(self, mcp_notification: Dict[str, Any]):
+        """Forward market data from MCP server to all connected Kaggle clients"""
+        if not self.kaggle_clients:
+            logger.debug("No Kaggle clients connected, skipping market data forward")
+            return
+        
+        # Extract the complete payload from MCP notification
+        params = mcp_notification.get("params", {})
+        payload_data = params.get("data", {})
+        timestamp = params.get("timestamp")
+        
+        # Extract components from the complex payload structure
+        market_data = payload_data.get("marketData", {})
+        portfolio = payload_data.get("portfolio", {})
+        current_prices = payload_data.get("currentPrices", {})
+        risk_config = payload_data.get("riskConfig", {})
+        difficulty = payload_data.get("difficulty", "medium")
+        original_request_id = payload_data.get("requestId")
+        
+        logger.info(f"Forwarding complex market data to Kaggle - difficulty: {difficulty}, original requestId: {original_request_id}")
+            
+        # Create message for Kaggle in expected format
+        message = {
+            "type": "market_data_request",
+            "request_id": original_request_id or str(uuid.uuid4()),
+            "market_data": {
+                "marketData": market_data,
+                "portfolio": portfolio,
+                "currentPrices": current_prices,
+                "riskConfig": risk_config,
+                "timestamp": timestamp
             },
-            system_message=SYSTEM_PROMPT,
-            tools=tools
-        )
+            "difficulty": difficulty,
+            "timestamp": timestamp or asyncio.get_event_loop().time()
+        }
         
-        print(f"Agent initialized with {len(tools)} tools")
+        # Send to all connected Kaggle clients
+        disconnected_clients = set()
+        for client in self.kaggle_clients.copy():
+            try:
+                await client.send(json.dumps(message))
+                logger.debug(f"Complex market data forwarded to Kaggle client: {client.remote_address}")
+            except websockets.exceptions.ConnectionClosed:
+                disconnected_clients.add(client)
+            except Exception as e:
+                logger.error(f"Error forwarding market data to client: {e}")
+                disconnected_clients.add(client)
+        
+        # Clean up disconnected clients
+        for client in disconnected_clients:
+            self.kaggle_clients.discard(client)
     
-    async def handle_market_data(self, data: Dict[str, Any]):
-        """Handle market data from MCP server"""
+    async def handle_kaggle_client(self, websocket, path):
+        """Handle incoming Kaggle WebSocket connections"""
+        client_addr = websocket.remote_address
+        self.kaggle_clients.add(websocket)
+        logger.info(f"Kaggle client connected: {client_addr}")
+        
+        # Send connection confirmation
+        await websocket.send(json.dumps({
+            "type": "connection_established",
+            "message": "Connected to MCP Bridge successfully"
+        }))
+        
         try:
-            prompt = f"""
-New market data received:
-{json.dumps(data, indent=2)}
-
-Analyze this data and decide if any action should be taken.
-Consider the current market conditions, trends, and your trading strategy.
-
-If you decide to trade, use the appropriate tool with correct parameters.
-If you decide to hold, use the crypto_hold tool with your reasoning.
-"""
+            async for message in websocket:
+                await self.process_kaggle_message(websocket, message)
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"Kaggle client disconnected: {client_addr}")
+        except Exception as e:
+            logger.error(f"Error handling Kaggle client {client_addr}: {e}")
+        finally:
+            self.kaggle_clients.discard(websocket)
+    
+    async def process_kaggle_message(self, websocket, message: str):
+        """Process incoming messages from Kaggle clients"""
+        try:
+            data = json.loads(message)
+            message_type = data.get("type")
             
-            print(f"Processing market data: {data}")
+            logger.debug(f"Received message from Kaggle: {message_type}")
             
-            # Run agent in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                self.agent.run,
-                prompt
-            )
+            if message_type == "request_tools":
+                await self.handle_tools_request(websocket)
+                
+            elif message_type == "status":
+                await self.handle_status_message(websocket, data)
+                
+            elif message_type == "heartbeat":
+                await self.handle_heartbeat(websocket, data)
+                
+            elif message_type == "market_data_response":
+                await self.handle_market_data_response(data)
+                
+            else:
+                logger.warning(f"Unknown message type from Kaggle: {message_type}")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from Kaggle client: {e}")
+        except Exception as e:
+            logger.error(f"Error processing Kaggle message: {e}")
+    
+    async def handle_tools_request(self, websocket):
+        """Send MCP tools to Kaggle client in exact MCP specification format"""
+        try:
+            # Convert MCPTool objects to proper MCP specification format
+            tools_data = []
+            for tool in self.mcp_tools:
+                tool_dict = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.parameters  # MCP spec uses inputSchema, not parameters
+                }
+                tools_data.append(tool_dict)
             
-            print(f"Agent decision: {response}")
+            response = {
+                "type": "tools_response",
+                "tools": tools_data
+            }
+            
+            await websocket.send(json.dumps(response))
+            logger.info(f"Sent {len(tools_data)} tools to Kaggle client in MCP format")
             
         except Exception as e:
-            print(f"Error processing market data: {e}")
+            logger.error(f"Error sending tools to Kaggle: {e}")
+    
+    async def handle_status_message(self, websocket, data):
+        """Handle status updates from Kaggle"""
+        status = data.get("status")
+        logger.info(f"Kaggle client status: {status}")
+        
+        # Acknowledge status
+        await websocket.send(json.dumps({
+            "type": "status_ack",
+            "received_status": status
+        }))
+    
+    async def handle_heartbeat(self, websocket, data):
+        """Handle heartbeat from Kaggle and respond"""
+        await websocket.send(json.dumps({
+            "type": "heartbeat_ack",
+            "timestamp": asyncio.get_event_loop().time()
+        }))
+    
+    async def handle_market_data_response(self, data):
+        """Handle trading decisions from Kaggle and route to MCP server"""
+        request_id = data.get("request_id")
+        response = data.get("response")
+        
+        logger.info(f"Received trading decision from Kaggle for request {request_id}")
+        
+        # Parse the trading decision and forward to MCP server
+        try:
+            if response:
+                # Handle both dict and string response formats
+                if isinstance(response, str):
+                    try:
+                        response = json.loads(response)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not parse response as JSON: {response}")
+                        return
+                
+                if isinstance(response, dict):
+                    function_call = response.get("function_call")
+                    if function_call:
+                        tool_name = function_call.get("name")
+                        arguments = function_call.get("arguments", {})
+                        
+                        if isinstance(arguments, str):
+                            try:
+                                arguments = json.loads(arguments)
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse arguments as JSON: {arguments}")
+                                return
+                        
+                        # Forward tool call to MCP server
+                        if self.mcp_client and tool_name:
+                            logger.info(f"Forwarding tool call to MCP server: {tool_name} with args {arguments}")
+                            result = await self.mcp_client.call_tool(tool_name, arguments)
+                            logger.info(f"MCP server tool execution result: {result}")
+                        else:
+                            logger.warning("No tool name found in trading decision or MCP client not available")
+                    else:
+                        logger.debug("No function call in trading response, likely a hold decision")
+                else:
+                    logger.warning(f"Invalid response format from Kaggle: {type(response)}")
+            else:
+                logger.warning("Empty response from Kaggle")
+                
+        except Exception as e:
+            logger.error(f"Error processing trading decision: {e}")
+            logger.error(f"Request data: {data}")
+            logger.error(f"Response data: {response}")
+    
+    async def start_websocket_server(self, host: str = "0.0.0.0", port: int = 8003):
+        """Start WebSocket server for Kaggle connections"""
+        logger.info(f"Starting WebSocket server for Kaggle on {host}:{port}")
+        
+        async with websockets.serve(self.handle_kaggle_client, host, port):
+            logger.info(f"WebSocket server running on ws://{host}:{port}")
+            self.running = True
+            
+            # Keep the server running
+            try:
+                while self.running:
+                    await asyncio.sleep(1)
+            except KeyboardInterrupt:
+                logger.info("Shutting down WebSocket server...")
+            finally:
+                self.running = False
     
     async def run(self):
-        """Main agent loop"""
+        """Main bridge loop"""
         await self.initialize()
         
-        print("Qwen Trading Agent is running...")
-        print("Waiting for market data...")
+        logger.info("MCP to Kaggle Bridge is running...")
+        logger.info("Waiting for Kaggle connections and market data...")
         
-        # Keep the agent running
-        try:
-            while True:
-                await asyncio.sleep(1)
-        except KeyboardInterrupt:
-            print("Shutting down agent...")
-        finally:
-            if self.mcp_client:
-                await self.mcp_client.disconnect()
+        # Start WebSocket server for Kaggle connections
+        await self.start_websocket_server()
+
+async def main():
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    bridge = MCPToKaggleBridge()
+    
+    try:
+        await bridge.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down bridge...")
+    except Exception as e:
+        logger.error(f"Bridge error: {e}")
+    finally:
+        if bridge.mcp_client:
+            await bridge.mcp_client.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())

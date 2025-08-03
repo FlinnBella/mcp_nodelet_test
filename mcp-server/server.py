@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from typing import Dict, Any
 from mcp_protocol import MCPProtocolHandler
 from trading_tools import TradingTools
 from website_connector import WebsiteConnector
@@ -21,14 +22,83 @@ class MCPTradingServer:
     
     def register_tools(self):
         """Register trading tools with MCP handler"""
-        # Same as before...
-        pass
+        # Register buy_crypto tool (frontend naming)
+        self.mcp_handler.register_tool(
+            name="buy_crypto",
+            description="Execute a cryptocurrency buy order",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "crypto": {
+                        "type": "string",
+                        "description": "The cryptocurrency symbol to buy (e.g., BTC, ETH)"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "The amount to buy"
+                    }
+                },
+                "required": ["crypto", "amount"]
+            },
+            handler=self.trading_tools.buy_crypto
+        )
+        
+        # Register sell_crypto tool (frontend naming)
+        self.mcp_handler.register_tool(
+            name="sell_crypto",
+            description="Execute a cryptocurrency sell order",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "crypto": {
+                        "type": "string",
+                        "description": "The cryptocurrency symbol to sell (e.g., BTC, ETH)"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "The amount to sell"
+                    }
+                },
+                "required": ["crypto", "amount"]
+            },
+            handler=self.trading_tools.sell_crypto
+        )
+        
+        # Register hold tool (frontend naming)
+        self.mcp_handler.register_tool(
+            name="hold",
+            description="Hold current position without taking any action",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "The reasoning for holding the position"
+                    }
+                },
+                "required": []
+            },
+            handler=self.trading_tools.hold
+        )
     
-    async def handle_market_data(self, data: Dict[str, Any]):
-        """Handle market data from website and broadcast to MCP clients"""
+    async def handle_market_data(self, payload: Dict[str, Any]):
+        """Handle complex market data payload from website and broadcast to MCP clients"""
+        # Extract the nested data structure
+        payload_data = payload.get("data", {})
+        difficulty = payload_data.get("difficulty", "medium")
+        request_id = payload_data.get("requestId")
+        timestamp = payload.get("timestamp")
+        
+        logger.info(f"Broadcasting market data to MCP clients - difficulty: {difficulty}, requestId: {request_id}")
+        
+        # Broadcast the complete payload structure to all MCP clients (including agent.py)
         await self.mcp_handler.broadcast_notification(
             method="market_data",
-            params=data
+            params={
+                "type": "market_data",
+                "data": payload_data,  # Pass the complete nested data structure
+                "timestamp": timestamp
+            }
         )
     
     async def start(self):

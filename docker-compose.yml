@@ -30,10 +30,11 @@ services:
     container_name: crypto-qwen-agent
     ports:
       - "8000:8000"
+      - "8003:8003"
     environment:
-      - OLLAMA_URL=http://host.docker.internal:11434  # Point to host Ollama
       - MCP_SERVER_URL=ws://mcp-server:8001
-      - MODEL_NAME=hf.co/unsloth/Qwen2.5-14B-Instruct-GGUF:Q4_K_M
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8003
       - PYTHONPATH=/app
     volumes:
       - ./shared:/app/shared
