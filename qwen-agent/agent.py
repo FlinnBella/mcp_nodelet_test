@@ -232,7 +232,7 @@ class MCPToKaggleBridge:
             logger.error(f"Request data: {data}")
             logger.error(f"Response data: {response}")
     
-    async def start_websocket_server(self, host: str = "0.0.0.0", port: int = 8003):
+    async def start_websocket_server(self, host: str = "0.0.0.0", port: int = 8004):
         """Start WebSocket server for Kaggle connections"""
         logger.info(f"Starting WebSocket server for Kaggle on {host}:{port}")
         

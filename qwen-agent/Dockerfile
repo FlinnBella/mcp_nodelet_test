@@ -25,7 +25,7 @@ RUN mkdir -p /app/logs
 RUN echo 'from http.server import HTTPServer, BaseHTTPRequestHandler\nimport json\nclass HealthHandler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        if self.path == "/health":\n            self.send_response(200)\n            self.send_header("Content-type", "application/json")\n            self.end_headers()\n            self.wfile.write(json.dumps({"status": "healthy"}).encode())\n        else:\n            self.send_response(404)\n            self.end_headers()\n\nif __name__ == "__main__":\n    server = HTTPServer(("0.0.0.0", 8000), HealthHandler)\n    server.serve_forever()' > health_server.py
 
 # Expose health port and websocket port
-EXPOSE 8000 8003
+EXPOSE 8000 8004
 
 # Create startup script
 COPY qwen-agent/start-agent.sh .
