@@ -141,12 +141,12 @@ class QwenTradingAgent:
         tools = create_tools_from_mcp(self.mcp_client)
         
         # Initialize Qwen agent
-        ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
-        model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
+        kaggle_url = os.getenv("KAGGLE_URL", "https://your-ngrok-url.ngrok.io")
+        model_name = os.getenv("MODEL_NAME", "qwen3-trading")
 
         llm_config = {
            'model' : model_name,
-           'model_server' : f'{ollama_url}/v1',
+           'model_server' : f'{kaggle_url}/v1',
            'api_key' : 'EMPTY',
            'fncall_prompt_type': 'nous',
            'generate_cfg': {
@@ -168,12 +168,13 @@ class QwenTradingAgent:
     
     def get_difficulty_config(self, difficulty: str) -> Dict[str, Any]:
         """Get LLM configuration based on difficulty level"""
-        ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434")
-        model_name = os.getenv("MODEL_NAME", "hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M")
+        kaggle_url = os.getenv("KAGGLE_URL", "https://your-ngrok-url.ngrok.io")
+        model_name = os.getenv("MODEL_NAME", "qwen3-trading")
+
         
         base_config = {
             'model': model_name,
-            'model_server': f'{ollama_url}/v1',
+            'model_server': f'{kaggle_url}/v1',
             'api_key': 'EMPTY',
             'fncall_prompt_type': 'nous',
         }

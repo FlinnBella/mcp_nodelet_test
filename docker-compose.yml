@@ -33,9 +33,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_URL=http://ollama:11434  # Point to Ollama docker container
+      - KAGGLE_VLLM_URL=https://your-ngrok-url.ngrok.io  # Point to Ollama docker container
       - MCP_SERVER_URL=ws://mcp-server:8001
-      - MODEL_NAME=hf.co/unsloth/Qwen3-1.7B-GGUF:Q4_K_M
+      - KAGGLE_MODEL=qwen3-trading
       - PYTHONPATH=/app
     volumes:
       - ./shared:/app/shared
