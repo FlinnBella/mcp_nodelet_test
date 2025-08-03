@@ -22,6 +22,7 @@ class TradingTools:
             raise Exception(f"Buy order failed: {str(e)}")
     
     async def sell_crypto(self, params: Dict[str, Any]) -> str:
+    async def sell_crypto(self, params: Dict[str, Any]) -> str:
         """Execute a sell order"""
         crypto = params.get("crypto")
         amount = params.get("amount")
@@ -36,6 +37,15 @@ class TradingTools:
             raise Exception(f"Sell order failed: {str(e)}")
     
     async def hold(self, params: Dict[str, Any]) -> str:
+    async def hold(self, params: Dict[str, Any]) -> str:
         """Hold position (no action)"""
-        reason = params.get("reason", "No specific reason provided")
-        return f"Holding position. Reason: {reason}"
+        reason = params.get("reason")
+        
+        if not reason:
+            raise ValueError("Missing required parameter: reason")
+        
+        try:
+            result = await self.website.execute_trade(self.action_mapping["hold"], None, None)
+            return f"Successfully held position. Reason: {reason}. Result: {result}"
+        except Exception as e:
+            raise Exception(f"Hold order failed: {str(e)}")

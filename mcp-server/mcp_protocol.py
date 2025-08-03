@@ -15,28 +15,34 @@ class MCPProtocolHandler:
         self.tools: Dict[str, Callable] = {}
         self.tool_definitions: List[MCPTool] = []
         self.clients = set()
+        self.agent_response_callback: Optional[Callable] = None
         
-    def register_tool(self, name: str, description: str, parameters: Dict[str, Any], handler: Callable):
+    def register_tool(self, name: str, description: str, inputSchema: Dict[str, Any], handler: Callable):
         """Register a tool with the MCP server"""
-        tool = MCPTool(name=name, description=description, parameters=parameters)
+        tool = MCPTool(name=name, description=description, inputSchema=inputSchema)
         self.tool_definitions.append(tool)
         self.tools[name] = handler
         logger.info(f"Registered tool: {name}")
     
+    def set_agent_response_callback(self, callback: Callable):
+        """Set callback for handling agent responses"""
+        self.agent_response_callback = callback
+    
     async def handle_client(self, websocket, path):
         """Handle MCP client connections"""
         self.clients.add(websocket)
-        logger.info(f"New MCP client connected: {websocket.remote_address}")
+        logger.info(f"DEBUG: New MCP client connected: {websocket.remote_address}, total clients: {len(self.clients)}")
         
         try:
             async for message in websocket:
                 await self.process_message(websocket, message)
         except ConnectionClosed:
-            logger.info(f"MCP client disconnected: {websocket.remote_address}")
+            logger.info(f"DEBUG: MCP client disconnected: {websocket.remote_address}, remaining clients: {len(self.clients)-1}")
         except Exception as e:
             logger.error(f"Error handling client: {e}")
         finally:
             self.clients.discard(websocket)
+            logger.info(f"DEBUG: Client cleanup complete, remaining clients: {len(self.clients)}")
     
     async def process_message(self, websocket, message: str):
         """Process incoming MCP messages"""
@@ -49,34 +55,68 @@ class MCPProtocolHandler:
             )
             
             response = await self.handle_request(request)
-            await websocket.send(json.dumps({
-                "id": response.id,
-                "result": response.result,
-                "error": response.error
-            }))
+            # MCP over WebSocket - add required jsonrpc field
+            response_msg = {"jsonrpc": "2.0", "id": response.id}
+            if response.error:
+                response_msg["error"] = response.error
+            else:
+                response_msg["result"] = response.result
+            await websocket.send(json.dumps(response_msg))
             
         except json.JSONDecodeError:
-            error_response = MCPResponse(
-                id="unknown",
-                error={"code": -32700, "message": "Parse error"}
-            )
-            await websocket.send(json.dumps(error_response.__dict__))
+            # MCP error response over WebSocket
+            error_msg = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "Parse error"}
+            }
+            await websocket.send(json.dumps(error_msg))
         except Exception as e:
-            error_response = MCPResponse(
-                id=data.get("id", "unknown"),
-                error={"code": -32603, "message": f"Internal error: {str(e)}"}
-            )
-            await websocket.send(json.dumps(error_response.__dict__))
+            # MCP error response over WebSocket
+            error_msg = {
+                "jsonrpc": "2.0",
+                "id": data.get("id") if 'data' in locals() else None,
+                "error": {"code": -32603, "message": f"Internal error: {str(e)}"}
+            }
+            await websocket.send(json.dumps(error_msg))
     
     async def handle_request(self, request: MCPRequest) -> MCPResponse:
         """Handle specific MCP requests"""
         if request.method == "initialize":
+            # Proper MCP initialization response
             return MCPResponse(
                 id=request.id,
                 result={
+                    "protocolVersion": "2024-11-05",
                     "capabilities": {
-                        "tools": [tool.__dict__ for tool in self.tool_definitions]
+                        "tools": {
+                            "listChanged": True
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "mcp-trading-server",
+                        "version": "1.0.0"
                     }
+                }
+            )
+        
+        elif request.method == "notifications/initialized":
+            # Client confirms initialization is complete
+            logger.info("MCP client initialization completed")
+            return MCPResponse(id=request.id, result={})
+        
+        elif request.method == "tools/list":
+            # Return available tools for discovery
+            return MCPResponse(
+                id=request.id,
+                result={
+                    "tools": [
+                        {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "inputSchema": tool.inputSchema
+                        } for tool in self.tool_definitions
+                    ]
                 }
             )
         
@@ -84,23 +124,65 @@ class MCPProtocolHandler:
             tool_name = request.params.get("name")
             arguments = request.params.get("arguments", {})
             
+            logger.info(f"DEBUG: ===== MCP SERVER TOOL CALL =====")
+            logger.info(f"DEBUG: MCP server received tool call: {tool_name}")
+            logger.info(f"DEBUG: Tool arguments: {arguments}")
+            
             if tool_name not in self.tools:
+                logger.error(f"DEBUG: Tool '{tool_name}' not found in available tools: {list(self.tools.keys())}")
                 return MCPResponse(
                     id=request.id,
                     error={"code": -32601, "message": f"Tool not found: {tool_name}"}
                 )
             
             try:
+                logger.info(f"DEBUG: Executing tool '{tool_name}' with handler: {self.tools[tool_name]}")
                 result = await self.tools[tool_name](arguments)
+                logger.info(f"DEBUG: Tool '{tool_name}' execution result: {result}")
+                # Proper MCP tool response format
                 return MCPResponse(
                     id=request.id,
-                    result={"content": result}
+                    result={
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": str(result)
+                            }
+                        ],
+                        "isError": False
+                    }
                 )
             except Exception as e:
+                logger.error(f"Tool execution error for {tool_name}: {e}")
+                # Tool errors should be in result.isError, not protocol errors
                 return MCPResponse(
                     id=request.id,
-                    error={"code": -32603, "message": f"Tool execution error: {str(e)}"}
+                    result={
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"Tool execution error: {str(e)}"
+                            }
+                        ],
+                        "isError": True
+                    }
                 )
+        
+        elif request.method == "agent_response":
+            # Handle agent response and forward to website
+            response_data = request.params.get("response", "")
+            logger.info(f"Received agent response, forwarding to website")
+            
+            if self.agent_response_callback:
+                try:
+                    await self.agent_response_callback(response_data)
+                except Exception as e:
+                    logger.error(f"Error forwarding agent response: {e}")
+            
+            return MCPResponse(
+                id=request.id,
+                result={"status": "response_forwarded"}
+            )
         
         else:
             return MCPResponse(
@@ -109,16 +191,23 @@ class MCPProtocolHandler:
             )
     
     async def broadcast_notification(self, method: str, params: Dict[str, Any]):
-        """Send notifications to all connected clients"""
-        message = json.dumps({
+        """Send MCP notifications over WebSocket to all connected clients"""
+        logger.info(f"DEBUG: Broadcasting {method} to {len(self.clients)} clients")
+        # MCP notification format (no id field for notifications)
+        notification = {
+            "jsonrpc": "2.0",
             "method": method,
             "params": params
-        })
+        }
+        message = json.dumps(notification)
+        logger.info(f"DEBUG: Notification message: {message}")
         
         for client in self.clients.copy():
             try:
                 await client.send(message)
+                logger.info(f"DEBUG: Sent to client {client.remote_address}")
             except ConnectionClosed:
+                logger.info(f"DEBUG: Client {client.remote_address} disconnected")
                 self.clients.discard(client)
     
     async def start_server(self, host: str = "0.0.0.0", port: int = 8001):

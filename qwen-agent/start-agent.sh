@@ -20,13 +20,24 @@ while ! nc -z mcp-server 8001; do
     sleep 2
 done
 
-# In qwen-agent/start-agent.sh
-echo "Testing connection to existing Ollama..."
-while ! curl -s http://host.docker.internal:11434/api/tags > /dev/null; do
-    echo "Waiting for Ollama..."
-    sleep 2
-done
-echo "Ollama connection successful!"
+# Test Kaggle endpoint connectivity
+if [ "$KAGGLE_URL" != "not-configured" ] && [ "$KAGGLE_URL" != "https://your-ngrok-url.ngrok.io" ]; then
+    echo "Testing Kaggle endpoint connectivity..."
+    if curl -s --max-time 10 "$KAGGLE_URL/health" > /dev/null; then
+        echo "✅ Kaggle endpoint is reachable!"
+    else
+        echo "⚠️  WARNING: Cannot reach Kaggle endpoint at $KAGGLE_URL"
+        echo "   Make sure your Kaggle notebook is running and ngrok tunnel is active"
+    fi
+fi
+
+echo "Starting Kaggle vLLM client..."
+
+
+echo "✅ Kaggle client is running!"
+echo "   Health endpoint: http://localhost:8000/health"
+echo "   Kaggle endpoint: $KAGGLE_URL"
+echo "   MCP server: $MCP_SERVER_URL"
 
 echo "Dependencies ready, starting agent..."
 

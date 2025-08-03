@@ -21,7 +21,13 @@ class MCPToKaggleBridge:
         # Connect to MCP server
         mcp_server_url = os.getenv("MCP_SERVER_URL", "ws://mcp-server:8001")
         self.mcp_client = MCPClient(mcp_server_url)
-        await self.mcp_client.connect()
+
+        try:
+            await self.mcp_client.connect()
+            logger.info("Connected to mcp-server container")
+        except Exception as e:
+             logger.error(f"Failed to connect due to: {e}")
+             raise 
         
         # Set up market data callback to forward to Kaggle
         self.mcp_client.set_market_data_callback(self.forward_market_data_to_kaggle)
