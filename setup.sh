@@ -9,6 +9,4 @@ docker-compose up -d
 # 4. Monitor startup (takes 1-2 minutes for model download)
 docker-compose logs -f
 
-# 5. Test the system
-curl http://localhost:8000/health
-curl http://localhost:8002  # Website connection port
+ # Website connection port
