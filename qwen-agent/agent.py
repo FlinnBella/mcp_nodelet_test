@@ -6,6 +6,7 @@ import logging
 import websockets
 from typing import Dict, Any, Set, Optional
 from mcp_client import MCPClient
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ class MCPToKaggleBridge:
         for client in disconnected_clients:
             self.kaggle_clients.discard(client)
     
-    async def handle_kaggle_client(self, websocket, path):
+    async def handle_kaggle_client(self, websocket):
         """Handle incoming Kaggle WebSocket connections"""
         client_addr = websocket.remote_address
         self.kaggle_clients.add(websocket)
@@ -131,6 +132,10 @@ class MCPToKaggleBridge:
                 
             elif message_type == "market_data_response":
                 await self.handle_market_data_response(data)
+            
+            elif message_type == "market_data_error":
+		error = data.get("error")
+                logger.error(f"Error from Kaggle with marketdata: {error}")
                 
             else:
                 logger.warning(f"Unknown message type from Kaggle: {message_type}")
@@ -146,17 +151,22 @@ class MCPToKaggleBridge:
             # Convert MCPTool objects to proper MCP specification format
             tools_data = []
             for tool in self.mcp_tools:
+                logger.info(f"{tool.name} has inputSchema {tool.inputSchema}")
                 tool_dict = {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "inputSchema": tool.parameters  # MCP spec uses inputSchema, not parameters
+                    "type": "function",
+                    "function": {
+                    	"name": tool.name,
+                    	"description": tool.description,
+                        "parameters": tool.inputSchema  # MCP spec uses inputSchema, not parameters
+                    }
                 }
                 tools_data.append(tool_dict)
             
+             #Need to make this OPENAI compatible
+             #possibly just let response equal tools_data?
             response = {
-                "type": "tools_response",
-                "tools": tools_data
-            }
+		"type": "tools_response",
+            	"tools": tools_data
             
             await websocket.send(json.dumps(response))
             logger.info(f"Sent {len(tools_data)} tools to Kaggle client in MCP format")
@@ -179,7 +189,7 @@ class MCPToKaggleBridge:
         """Handle heartbeat from Kaggle and respond"""
         await websocket.send(json.dumps({
             "type": "heartbeat_ack",
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": time.time()
         }))
     
     async def handle_market_data_response(self, data):
