@@ -70,9 +70,9 @@ class WebsiteConnector:
                 return
                 
             logger.debug(f"Processing {message_type} from {client_info}")
+                          
             
-            
-            if message_type == "market_data":
+            if message_type == "market_data" or message_type == "portfolio_update":
                 # Handle complex aiPayload structure from frontend
                 payload_data = data.get("data", {})
                 

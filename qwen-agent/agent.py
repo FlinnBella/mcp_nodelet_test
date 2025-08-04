@@ -49,7 +49,7 @@ class MCPToKaggleBridge:
         params = mcp_notification.get("params", {})
         payload_data = params.get("data", {})
         timestamp = params.get("timestamp")
-        
+        logger.info("Market Data recieved from ws -> forward to Kaggle")        
         # Extract components from the complex payload structure
         market_data = payload_data.get("marketData", {})
         portfolio = payload_data.get("portfolio", {})
@@ -134,7 +134,7 @@ class MCPToKaggleBridge:
                 await self.handle_market_data_response(data)
             
             elif message_type == "market_data_error":
-		error = data.get("error")
+                error = data.get("error")
                 logger.error(f"Error from Kaggle with marketdata: {error}")
                 
             else:
@@ -155,8 +155,8 @@ class MCPToKaggleBridge:
                 tool_dict = {
                     "type": "function",
                     "function": {
-                    	"name": tool.name,
-                    	"description": tool.description,
+                        "name": tool.name,
+                        "description": tool.description,
                         "parameters": tool.inputSchema  # MCP spec uses inputSchema, not parameters
                     }
                 }
@@ -165,9 +165,9 @@ class MCPToKaggleBridge:
              #Need to make this OPENAI compatible
              #possibly just let response equal tools_data?
             response = {
-		"type": "tools_response",
-            	"tools": tools_data
-            
+        "type": "tools_response",
+                "tools": tools_data
+            }
             await websocket.send(json.dumps(response))
             logger.info(f"Sent {len(tools_data)} tools to Kaggle client in MCP format")
             
