@@ -43,7 +43,7 @@ class TradingTools:
             raise ValueError("Missing required parameter: reason")
         
         try:
-            result = await self.website.execute_trade(self.action_mapping["hold"], None, None)
+            result = await self.website.execute_trade("hold", None, None)
             return f"Successfully held position. Reason: {reason}. Result: {result}"
         except Exception as e:
             raise Exception(f"Hold order failed: {str(e)}")

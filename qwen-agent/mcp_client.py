@@ -161,13 +161,36 @@ class MCPClient:
         logger.info(f"DEBUG: ===== MCP CLIENT TOOL CALL =====")
         logger.info(f"DEBUG: Calling tool '{tool_name}' with arguments: {arguments}")
         
-        result = await self.send_request("tools/call", {
-            "name": tool_name,
-            "arguments": arguments
-        })
-        
-        logger.info(f"DEBUG: MCP server returned result: {result}")
-        return result.get("content", "")
+        try:
+            result = await self.send_request("tools/call", {
+                "name": tool_name,
+                "arguments": arguments
+            })
+            
+            logger.info(f"DEBUG: MCP server returned result: {result}")
+            
+            # Enhanced error detection from MCP server response
+            if isinstance(result, dict):
+                if "error" in result:
+                    error_msg = f"MCP server error for tool {tool_name}: {result['error']}"
+                    logger.error(error_msg)
+                    return error_msg
+                elif "content" in result:
+                    content = result["content"]
+                    # Check if content contains structured error information
+                    if isinstance(content, str) and "failed" in content.lower():
+                        logger.warning(f"Tool {tool_name} reported failure: {content}")
+                    return content
+                else:
+                    logger.warning(f"Unexpected result format from tool {tool_name}: {result}")
+                    return str(result)
+            else:
+                return str(result) if result else ""
+                
+        except Exception as e:
+            error_msg = f"Failed to call tool {tool_name}: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
     
     def set_market_data_callback(self, callback: callable):
         """Set callback for market data notifications"""

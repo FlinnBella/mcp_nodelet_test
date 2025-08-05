@@ -158,19 +158,39 @@ class WebsiteConnector:
         }
         
         results = []
+        successful_sends = 0
+        
         for client in self.website_clients.copy():
             try:
                 await client.send(json.dumps(command))
                 logger.debug(f"Sent trade command to {client.remote_address}")
                 results.append({"client": str(client.remote_address), "status": "sent"})
+                successful_sends += 1
             except websockets.exceptions.ConnectionClosed:
                 self.website_clients.discard(client)
                 logger.info(f"Removed disconnected client: {client.remote_address}")
+                results.append({"client": str(client.remote_address), "status": "disconnected"})
             except Exception as e:
                 logger.error(f"Failed to send trade to {client.remote_address}: {e}")
                 results.append({"client": str(client.remote_address), "status": "failed", "error": str(e)})
         
-        return {"results": results, "command": command["data"]}
+        # Enhanced error reporting for upstream propagation
+        result = {
+            "results": results, 
+            "command": command["data"],
+            "successful_sends": successful_sends,
+            "total_clients": len(self.website_clients) + (len(results) - len(self.website_clients))
+        }
+        
+        # If no successful sends, provide clear error for upstream
+        if successful_sends == 0:
+            result["error"] = "No clients received the trade command"
+            logger.error("Trade execution failed: No clients received the command")
+        elif successful_sends < len(results):
+            result["warning"] = f"Only {successful_sends}/{len(results)} clients received the trade command"
+            logger.warning(f"Partial trade execution: {successful_sends}/{len(results)} clients")
+        
+        return result
     
     async def broadcast_message(self, message_type: str, data: Dict[str, Any]):
         """Broadcast message to all connected websites"""
